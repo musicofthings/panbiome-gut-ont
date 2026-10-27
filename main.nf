@@ -279,10 +279,11 @@ workflow {
              tool_versions)
         .collect()
     BUILD_REPORT(report_inputs, DIVERSITY.out.dir, Channel.value(pj))
-}
 
-workflow.onComplete {
-    log.info(workflow.success
-        ? "\nDone. Open ${params.out_dir}/wf-gut-report.html"
-        : "\nWorkflow failed: ${workflow.errorMessage}")
+    // Assignment form is valid in Nextflow 23.10 and in the 25+ strict syntax.
+    workflow.onComplete = {
+        log.info(workflow.success
+            ? "\nDone. Open ${params.out_dir}/wf-gut-report.html"
+            : "\nWorkflow failed: ${workflow.errorMessage}")
+    }
 }

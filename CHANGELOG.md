@@ -10,6 +10,7 @@ Fixes found while running the v0.1.0 draft. Parameter defaults are unchanged, in
 - Kraken2 classifications go to stdout. `--output -` was removed because that value suppresses output (`modules/profiling.nf`).
 - GTDB-Tk `classify_wf` is called without `--skip_ani_screen`. That flag is absent from the 2.8.0 help (`modules/assembly.nf`).
 - When `--medaka_model` is a model name, Medaka downloads `r1041_e82_400bps_sup_v5.0.0_model_pt.tar.gz` into the work directory, refuses a body over 1 GiB, and passes that path to `medaka_consensus -m`. The model name is unchanged (`modules/assembly.nf`).
+- `workflow.onComplete` is assigned inside the entry workflow so Nextflow 25+ strict syntax accepts the script. The completion message is unchanged (`main.nf`).
 
 ### Documentation
 
