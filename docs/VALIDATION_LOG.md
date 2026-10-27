@@ -243,3 +243,20 @@ No database was downloaded. `df` on the data volume reported about 84 GiB free. 
 
 `README.md` verification status now names the synthetic stub sheet and the ERR2906227 prefix. The example sylph path is the GTDB r226 `.syl2db`. `CHANGELOG.md` records the v0.1.1 fixes. The stub run was not repeated.
 
+## 2026-10-28 — Phase 7: publish
+
+`.gitignore` also excludes `stub_output*/`, `.DS_Store`, and `.claude/`. `git add -A` staged 49 files. No secrets, `work/`, `.nextflow`, or stub outputs were staged.
+
+| Check | Result |
+| --- | --- |
+| `git init -b main` and `git commit -m "panbiome-gut-ont v0.1.1"` | Passed. Commit `00a4dfc`. |
+| `git push` to `git@github.com:musicofthings/panbiome-gut-ont.git` | SSH failed: `Permission denied (publickey)`. `gh` is logged in as `musicofthings` over HTTPS. |
+| `gh repo create musicofthings/panbiome-gut-ont --public --source=. --remote=origin --push` | Passed. https://github.com/musicofthings/panbiome-gut-ont is public. `origin` is `https://github.com/musicofthings/panbiome-gut-ont.git`. Branch `main`. |
+| GitHub Actions run 40577679838 | Failed. Job `test` passed. Job `stub` failed on Nextflow 26.10.4 (`nf-core/setup-nextflow@v2`): `workflow.onComplete` at the top of `main.nf` is a statement mixed with script declarations. |
+| Local stub after moving the handler, Nextflow 23.10.0 | The block form inside `workflow` exited the handler with `Cannot get property 'success' on null object`. The assignment form `workflow.onComplete = { ... }` passed: `bash tests/stub_run.sh /tmp/panbiome-phase7/stub_output2`, exit 0, and the log printed `Done. Open .../wf-gut-report.html`. |
+| GitHub Actions run 40578152595 | Failed. Job `test` passed. Job `stub` on Nextflow 26.10.4 failed at `modules/qc.nf` line 5: `No such variable: meta` in a `publishDir` string. |
+| Local stub after `publishDir { ... }` for every path that uses `meta.id` | Passed on Nextflow 23.10.0 (`/tmp/panbiome-phase7/stub2310`, exit 0, completion line printed) and on Nextflow 26.10.4 jar `~/.nextflow/framework/26.10.4/nextflow-26.10.4-one.jar` (`/tmp/panbiome-phase7/stub26`, exit 0, completion line printed). |
+| GitHub Actions run 40578822436 on commit `536588d` | Passed. Jobs `test` and `stub` both succeeded. |
+| `docker push ghcr.io/musicofthings/panbiome-gut-ont-core:0.1.0` | Failed. `docker login ghcr.io` as `musicofthings` succeeded. The push returned `denied: permission_denied: The token provided does not match expected scopes.` The active `gh` token scopes are `gist`, `read:org`, `repo`, and `workflow`. No image was pushed. No git tag was created, so `.github/workflows/build-image.yml` did not run. |
+| EPI2ME import | Not run. No EPI2ME app is installed on this machine. `nextflow_schema.json` remains a Draft-07 schema with `workflow_title` and definition groups, and `python3 -m pytest tests -q` passed in Phase 6. |
+
