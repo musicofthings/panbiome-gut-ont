@@ -2,8 +2,8 @@ process KRAKEN2 {
     tag "$meta.id"
     label 'big'
     container params.container_kraken2
-    publishDir "${params.out_dir}/samples/${meta.id}/taxonomy", mode: 'copy', pattern: '*.kreport'
-    publishDir "${params.out_dir}/samples/${meta.id}/taxonomy", mode: 'copy', pattern: '*.kraken2.out.gz', enabled: params.save_read_classification
+    publishDir { "${params.out_dir}/samples/${meta.id}/taxonomy" }, mode: 'copy', pattern: '*.kreport'
+    publishDir { "${params.out_dir}/samples/${meta.id}/taxonomy" }, mode: 'copy', pattern: '*.kraken2.out.gz', enabled: params.save_read_classification
 
     input:
     tuple val(meta), path(reads)
@@ -34,7 +34,7 @@ process BRACKEN {
     tag "$meta.id"
     label 'small'
     container params.container_bracken
-    publishDir "${params.out_dir}/samples/${meta.id}/taxonomy", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/taxonomy" }, mode: 'copy'
 
     input:
     tuple val(meta), path(kreport)
@@ -87,7 +87,7 @@ process KRONA {
     tag "$meta.id"
     label 'small'
     container params.container_krona
-    publishDir "${params.out_dir}/samples/${meta.id}/taxonomy", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/taxonomy" }, mode: 'copy'
 
     input:
     tuple val(meta), path(krona_txt)
@@ -114,7 +114,7 @@ process SYLPH {
     tag "$meta.id"
     label 'medium'
     container params.container_sylph
-    publishDir "${params.out_dir}/samples/${meta.id}/taxonomy", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/taxonomy" }, mode: 'copy'
 
     input:
     tuple val(meta), path(reads)
@@ -165,7 +165,7 @@ process EMU {
     tag "$meta.id"
     label 'big'
     container params.container_emu
-    publishDir "${params.out_dir}/samples/${meta.id}/taxonomy", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/taxonomy" }, mode: 'copy'
 
     input:
     tuple val(meta), path(reads)
@@ -216,7 +216,7 @@ process RECONCILE {
     tag "$meta.id"
     label 'small'
     container params.container_core
-    publishDir "${params.out_dir}/samples/${meta.id}/taxonomy", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/taxonomy" }, mode: 'copy'
 
     input:
     tuple val(meta), path(bracken, stageAs: 'in_b/*'), path(sylph, stageAs: 'in_s/*'), path(emu, stageAs: 'in_e/*')

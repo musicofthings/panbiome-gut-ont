@@ -6,7 +6,7 @@ process FLYE {
     tag "$meta.id"
     label 'big'
     container params.container_flye
-    publishDir "${params.out_dir}/samples/${meta.id}/assembly", mode: 'copy', pattern: '*.assembly_info.txt'
+    publishDir { "${params.out_dir}/samples/${meta.id}/assembly" }, mode: 'copy', pattern: '*.assembly_info.txt'
 
     input:
     tuple val(meta), path(reads)
@@ -139,7 +139,7 @@ process MAP_CONTIGS {
     tag "$meta.id"
     label 'medium'
     container params.container_core
-    publishDir "${params.out_dir}/samples/${meta.id}/assembly", mode: 'copy', pattern: '*.contig_depth.tsv'
+    publishDir { "${params.out_dir}/samples/${meta.id}/assembly" }, mode: 'copy', pattern: '*.contig_depth.tsv'
 
     input:
     tuple val(meta), path(reads), path(contigs)
@@ -169,7 +169,7 @@ process SEMIBIN2 {
     tag "$meta.id"
     label 'big'
     container params.container_semibin
-    publishDir "${params.out_dir}/samples/${meta.id}/bins", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/bins" }, mode: 'copy'
 
     input:
     tuple val(meta), path(contigs), path(bam), path(bai)
@@ -208,7 +208,7 @@ process CHECKM2 {
     tag "$meta.id"
     label 'big'
     container params.container_checkm2
-    publishDir "${params.out_dir}/samples/${meta.id}/bins", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/bins" }, mode: 'copy'
 
     input:
     tuple val(meta), path(bins), path(contig_bins)
@@ -241,7 +241,7 @@ process GTDBTK {
     tag "$meta.id"
     label 'big'
     container params.container_gtdbtk
-    publishDir "${params.out_dir}/samples/${meta.id}/bins", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/bins" }, mode: 'copy'
 
     input:
     tuple val(meta), path(bins), path(contig_bins)
@@ -276,7 +276,7 @@ process AMRFINDER {
     tag "$meta.id"
     label 'medium'
     container params.container_amrfinder
-    publishDir "${params.out_dir}/samples/${meta.id}/resistance", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/resistance" }, mode: 'copy'
 
     input:
     tuple val(meta), path(contigs), path(info)
@@ -308,7 +308,7 @@ process GENOMAD {
     tag "$meta.id"
     label 'big'
     container params.container_genomad
-    publishDir "${params.out_dir}/samples/${meta.id}/resistance", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/resistance" }, mode: 'copy'
 
     input:
     tuple val(meta), path(contigs), path(info)
@@ -398,7 +398,7 @@ process FUNCTION_SUMMARY {
     tag "$meta.id"
     label 'small'
     container params.container_core
-    publishDir "${params.out_dir}/samples/${meta.id}/function", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/function" }, mode: 'copy'
 
     input:
     tuple val(meta), path(annotations), path(info)
@@ -424,7 +424,7 @@ process AMR_LINKAGE {
     tag "$meta.id"
     label 'small'
     container params.container_core
-    publishDir "${params.out_dir}/samples/${meta.id}/resistance", mode: 'copy'
+    publishDir { "${params.out_dir}/samples/${meta.id}/resistance" }, mode: 'copy'
 
     input:
     tuple val(meta), path(amr), path(info), path(plasmids, stageAs: 'in_p/*'), path(contig_bins, stageAs: 'in_t/*'), path(bins, stageAs: 'in_d/*'), path(checkm, stageAs: 'in_c/*'), path(gtdb, stageAs: 'in_g/*')

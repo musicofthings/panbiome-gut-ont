@@ -2,7 +2,7 @@ process READ_STATS {
     tag "${meta.id}:${stage}"
     label 'small'
     container params.container_core
-    publishDir "${params.out_dir}/samples/${meta.id}/qc", mode: 'copy', pattern: '*.stats.json'
+    publishDir { "${params.out_dir}/samples/${meta.id}/qc" }, mode: 'copy', pattern: '*.stats.json'
 
     input:
     tuple val(meta), path(fastq), path(header), val(stage)
@@ -55,8 +55,8 @@ process HOST_DEPLETION {
     tag "$meta.id"
     label 'big'
     container params.container_core
-    publishDir "${params.out_dir}/samples/${meta.id}/qc", mode: 'copy', pattern: '*.host.json'
-    publishDir "${params.out_dir}/samples/${meta.id}/reads", mode: 'copy', pattern: '*.nonhost.fastq.gz', enabled: params.save_nonhost_reads
+    publishDir { "${params.out_dir}/samples/${meta.id}/qc" }, mode: 'copy', pattern: '*.host.json'
+    publishDir { "${params.out_dir}/samples/${meta.id}/reads" }, mode: 'copy', pattern: '*.nonhost.fastq.gz', enabled: params.save_nonhost_reads
 
     input:
     tuple val(meta), path(fastq), path(header)
@@ -89,7 +89,7 @@ process HOST_SKIP {
     tag "$meta.id"
     label 'small'
     container params.container_core
-    publishDir "${params.out_dir}/samples/${meta.id}/qc", mode: 'copy', pattern: '*.host.json'
+    publishDir { "${params.out_dir}/samples/${meta.id}/qc" }, mode: 'copy', pattern: '*.host.json'
 
     input:
     tuple val(meta), path(fastq), path(header)
