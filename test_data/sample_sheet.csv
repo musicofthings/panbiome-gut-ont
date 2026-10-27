@@ -1,0 +1,4 @@
+barcode,alias,type,group
+barcode01,P001,test_sample,A
+barcode02,P002,test_sample,B
+barcode03,BLANK1,negative_control,

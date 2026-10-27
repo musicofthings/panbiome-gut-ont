@@ -1,0 +1,6 @@
+function	gene	ko
+butyrate synthesis	buk (butyrate kinase)	K00929
+butyrate synthesis	ptb (phosphate butyryltransferase)	K00634
+butyrate synthesis	bcd (butyryl-CoA dehydrogenase)	K00248
+bile acid deconjugation	bsh/cbh (bile salt hydrolase)	K01442
+sulfate reduction (H2S)	dsrA (dissimilatory sulfite reductase alpha)	K11180

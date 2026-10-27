@@ -1,0 +1,11 @@
+taxon	min_rel_abundance	note
+Clostridioides difficile	0.001	Placeholder threshold. Toxigenic status needs tcdA/tcdB (see AMRFinderPlus --plus output).
+Salmonella enterica	0.001	Placeholder threshold. Not expected in healthy stool.
+Campylobacter jejuni	0.001	Placeholder threshold.
+Campylobacter coli	0.001	Placeholder threshold.
+Vibrio cholerae	0.001	Placeholder threshold.
+Klebsiella pneumoniae	0.01	Placeholder threshold. Check resistance genes and plasmid context.
+Enterococcus faecium	0.01	Placeholder threshold. Check van genes.
+Escherichia coli	0.10	Commensal in most people; flags overgrowth only. Pathotype needs stx/eae genes. GTDB places Shigella inside Escherichia.
+Bacteroides fragilis	0.10	Enterotoxigenic status needs the bft gene; species alone is not a finding.
+Fusobacterium nucleatum	0.001	Placeholder threshold. Research-grade association only.

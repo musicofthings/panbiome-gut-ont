@@ -1,0 +1,583 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/musicofthings/panbiome-gut-ont/main/nextflow_schema.json",
+  "title": "musicofthings/panbiome-gut-ont",
+  "workflow_title": "Panbiome gut microbiome (ONT)",
+  "description": "Oxford Nanopore gut microbiome workflow for human stool: QC, host depletion, species profiling, assembly, MAGs, resistance genes, function, diversity and reports.",
+  "demo_url": "",
+  "aws_demo_url": "",
+  "url": "https://github.com/musicofthings/panbiome-gut-ont",
+  "type": "object",
+  "definitions": {
+    "input_options": {
+      "title": "Input options",
+      "type": "object",
+      "fa_icon": "fas fa-terminal",
+      "description": "Sequencing data, sample sheet and assay.",
+      "properties": {
+        "fastq": {
+          "type": "string",
+          "description": "Basecalled reads: a folder of barcode folders (for example fastq_pass), a folder of FASTQ/BAM files, or one file.",
+          "format": "path",
+          "help_text": "Barcode folder names must match the 'barcode' column of the sample sheet. Unmapped BAM from Dorado is accepted; mapped BAM is not.",
+          "fa_icon": "fas fa-file"
+        },
+        "sample_sheet": {
+          "type": "string",
+          "description": "CSV with columns barcode, alias, type and optional metadata.",
+          "format": "file-path",
+          "help_text": "type is one of test_sample, positive_control, negative_control, no_template_control. Extra columns such as group, subject_id, collection_date are carried into reports.",
+          "fa_icon": "fas fa-table"
+        },
+        "out_dir": {
+          "type": "string",
+          "description": "Output folder.",
+          "default": "output",
+          "format": "directory-path",
+          "fa_icon": "fas fa-folder-open"
+        },
+        "assay": {
+          "type": "string",
+          "description": "Assay type.",
+          "default": "shotgun",
+          "enum": [
+            "shotgun",
+            "16s",
+            "both"
+          ],
+          "help_text": "shotgun = whole-genome metagenome. 16s = full-length 16S amplicons profiled with Emu."
+        },
+        "required_metadata": {
+          "type": "string",
+          "description": "Comma-separated sample sheet columns that must be filled for every sample.",
+          "default": "",
+          "help_text": "For example: subject_id,collection_date,extraction_lot,bristol_score,time_to_freezing_h"
+        }
+      },
+      "required": [
+        "fastq"
+      ]
+    },
+    "run_metadata": {
+      "title": "Flow cell and library",
+      "type": "object",
+      "fa_icon": "fas fa-microchip",
+      "description": "Details about this flow cell use (washed, second library).",
+      "properties": {
+        "pgx_barcodes": {
+          "type": "string",
+          "description": "Barcodes used by the earlier PGx library on this flow cell.",
+          "default": "",
+          "help_text": "Any sample sheet barcode listed here is rejected, which prevents carryover from being mistaken for a gut sample."
+        },
+        "pgx_regions": {
+          "type": "string",
+          "description": "BED of PGx target regions in the host reference coordinates.",
+          "format": "file-path",
+          "help_text": "Human reads falling in these regions are counted as likely carryover from the PGx library and flagged."
+        },
+        "pore_count": {
+          "type": "integer",
+          "description": "Available pores at the first pore scan.",
+          "default": 0,
+          "help_text": "Recorded in the report. A washed flow cell cannot repeat the Flow Cell Check, so use the pore scan value.",
+          "minimum": 0
+        },
+        "run_hours": {
+          "type": "number",
+          "description": "Run time in hours.",
+          "default": 0,
+          "minimum": 0
+        }
+      }
+    },
+    "read_processing": {
+      "title": "Read filtering",
+      "type": "object",
+      "fa_icon": "fas fa-filter",
+      "description": "Length and quality filters.",
+      "properties": {
+        "min_len": {
+          "type": "integer",
+          "description": "Minimum read length (bp).",
+          "default": 500,
+          "minimum": 0
+        },
+        "max_len": {
+          "type": "integer",
+          "description": "Maximum read length (bp). 0 means no limit.",
+          "default": 0,
+          "minimum": 0
+        },
+        "min_q": {
+          "type": "number",
+          "description": "Minimum mean read quality.",
+          "default": 10,
+          "minimum": 0
+        },
+        "adapters_fasta": {
+          "type": "string",
+          "description": "Extra adapter or barcode sequences for the residual-adapter check.",
+          "format": "file-path"
+        }
+      }
+    },
+    "host_depletion": {
+      "title": "Host depletion",
+      "type": "object",
+      "fa_icon": "fas fa-user-slash",
+      "description": "Human reads are counted and discarded; they are never written to disk.",
+      "properties": {
+        "host_ref": {
+          "type": "string",
+          "description": "Human reference as a minimap2 index (.mmi built with -x map-ont) or FASTA.",
+          "format": "file-path",
+          "help_text": "T2T-CHM13v2.0 is recommended. A prebuilt .mmi saves several minutes per sample."
+        },
+        "skip_host_depletion": {
+          "type": "boolean",
+          "description": "Skip host depletion (not recommended).",
+          "default": false,
+          "help_text": "Only for samples known to be free of human DNA."
+        },
+        "host_min_aligned_frac": {
+          "type": "number",
+          "description": "Fraction of a read that must align to the host to call it host.",
+          "default": 0.5,
+          "minimum": 0
+        }
+      }
+    },
+    "taxonomy": {
+      "title": "Species profiling",
+      "type": "object",
+      "fa_icon": "fas fa-bacteria",
+      "description": "Databases and thresholds. All shotgun databases must share one taxonomy (GTDB recommended).",
+      "properties": {
+        "kraken2_db": {
+          "type": "string",
+          "description": "Kraken2 database folder (with Bracken files built for bracken_read_len).",
+          "format": "directory-path"
+        },
+        "kraken2_confidence": {
+          "type": "number",
+          "description": "Kraken2 confidence threshold.",
+          "default": 0.05,
+          "minimum": 0
+        },
+        "kraken2_memory_mapping": {
+          "type": "boolean",
+          "description": "Memory-map the Kraken2 database instead of loading it into RAM.",
+          "default": false
+        },
+        "bracken_read_len": {
+          "type": "integer",
+          "description": "Read length the Bracken kmer distribution was built for.",
+          "default": 1000,
+          "minimum": 1
+        },
+        "bracken_threshold": {
+          "type": "integer",
+          "description": "Minimum reads for Bracken to re-estimate a species.",
+          "default": 10,
+          "minimum": 0
+        },
+        "sylph_db": {
+          "type": "string",
+          "description": "sylph database (.syldb).",
+          "format": "file-path"
+        },
+        "sylph_lineage_map": {
+          "type": "string",
+          "description": "TSV mapping genome accession to GTDB lineage.",
+          "format": "file-path",
+          "help_text": "Build it with bin/make_sylph_lineage_map.py from the GTDB taxonomy files."
+        },
+        "sylph_args": {
+          "type": "string",
+          "description": "Extra arguments for sylph profile.",
+          "default": "",
+          "help_text": "For noisy long reads consider --read-seq-id; check `sylph profile --help` for your version and tune in the pilot."
+        },
+        "emu_db": {
+          "type": "string",
+          "description": "Emu database folder (for assay 16s or both).",
+          "format": "directory-path"
+        },
+        "taxa_rule": {
+          "type": "string",
+          "description": "Species call rule when two shotgun methods run.",
+          "default": "both",
+          "enum": [
+            "both",
+            "either"
+          ],
+          "help_text": "both keeps a species only when Kraken2/Bracken and sylph agree."
+        },
+        "primary_method": {
+          "type": "string",
+          "description": "Method that supplies final abundances.",
+          "default": "bracken",
+          "enum": [
+            "bracken",
+            "sylph",
+            "emu"
+          ]
+        },
+        "min_species_reads": {
+          "type": "number",
+          "description": "Minimum Bracken reads to call a species.",
+          "default": 50,
+          "minimum": 0
+        },
+        "min_ani": {
+          "type": "number",
+          "description": "Minimum sylph adjusted ANI (%).",
+          "default": 95,
+          "minimum": 0
+        },
+        "min_cov": {
+          "type": "number",
+          "description": "Minimum sylph effective coverage.",
+          "default": 0,
+          "minimum": 0
+        },
+        "taxa_synonyms": {
+          "type": "string",
+          "description": "Optional TSV of name synonyms (alias then canonical name).",
+          "format": "file-path"
+        },
+        "watchlist": {
+          "type": "string",
+          "description": "Gut watchlist TSV (taxon, min_rel_abundance, note).",
+          "format": "file-path",
+          "help_text": "Defaults to assets/gut_watchlist.tsv. Thresholds are placeholders until validated."
+        },
+        "save_read_classification": {
+          "type": "boolean",
+          "description": "Keep the per-read Kraken2 output.",
+          "default": false
+        },
+        "save_nonhost_reads": {
+          "type": "boolean",
+          "description": "Keep the non-host reads (human reads are never kept).",
+          "default": false
+        }
+      }
+    },
+    "assembly_annotation": {
+      "title": "Assembly and annotation",
+      "type": "object",
+      "fa_icon": "fas fa-dna",
+      "description": "Long-read metagenome assembly, MAGs, resistance genes, plasmids and function.",
+      "properties": {
+        "skip_assembly": {
+          "type": "boolean",
+          "description": "Skip assembly and everything downstream of it.",
+          "default": false
+        },
+        "skip_polish": {
+          "type": "boolean",
+          "description": "Skip Medaka polishing.",
+          "default": false
+        },
+        "flye_args": {
+          "type": "string",
+          "description": "Extra arguments for Flye.",
+          "default": ""
+        },
+        "medaka_model": {
+          "type": "string",
+          "description": "Medaka model matching the basecaller.",
+          "default": "r1041_e82_400bps_sup_v5.0.0",
+          "help_text": "Must match the flow cell chemistry and basecaller version; verify with `medaka tools list_models`."
+        },
+        "skip_binning": {
+          "type": "boolean",
+          "description": "Skip binning and MAG quality control.",
+          "default": false
+        },
+        "semibin_env": {
+          "type": "string",
+          "description": "SemiBin2 pretrained environment.",
+          "default": "human_gut"
+        },
+        "checkm2_db": {
+          "type": "string",
+          "description": "CheckM2 diamond database (.dmnd).",
+          "format": "file-path"
+        },
+        "gtdbtk_db": {
+          "type": "string",
+          "description": "GTDB-Tk reference data folder (optional, large).",
+          "format": "directory-path"
+        },
+        "amrfinder_db": {
+          "type": "string",
+          "description": "AMRFinderPlus database folder.",
+          "format": "directory-path"
+        },
+        "amr_min_cov": {
+          "type": "number",
+          "description": "Minimum % coverage of the reference gene to report.",
+          "default": 90,
+          "minimum": 0
+        },
+        "amr_min_id": {
+          "type": "number",
+          "description": "Minimum % identity to the reference gene to report.",
+          "default": 90,
+          "minimum": 0
+        },
+        "genomad_db": {
+          "type": "string",
+          "description": "geNomad database folder (enables plasmid calls).",
+          "format": "directory-path"
+        },
+        "eggnog_db": {
+          "type": "string",
+          "description": "eggNOG-mapper data folder (enables functional profiling).",
+          "format": "directory-path"
+        },
+        "functional_targets": {
+          "type": "string",
+          "description": "TSV of targeted gut functions (function, gene, ko).",
+          "format": "file-path",
+          "help_text": "Defaults to assets/functional_targets.tsv. The starter set must be curated before clinical use."
+        }
+      }
+    },
+    "controls_qc": {
+      "title": "Controls and QC",
+      "type": "object",
+      "fa_icon": "fas fa-vial",
+      "description": "Scheduled-control handling and per-sample thresholds. All values are placeholders until validated.",
+      "properties": {
+        "mock_expected": {
+          "type": "string",
+          "description": "TSV of the mock community's expected composition (taxon, expected_rel_abundance).",
+          "format": "file-path"
+        },
+        "control_summary": {
+          "type": "string",
+          "description": "control_summary.json from the latest scheduled control run.",
+          "format": "file-path",
+          "help_text": "Used when this run has no controls. Patient results are released only while it is PASS and fresh."
+        },
+        "control_max_age_days": {
+          "type": "integer",
+          "description": "Maximum age of a referenced control run (days).",
+          "default": 31,
+          "minimum": 1
+        },
+        "mock_max_bray": {
+          "type": "number",
+          "description": "Maximum Bray-Curtis dissimilarity of the mock community.",
+          "default": 0.3,
+          "minimum": 0
+        },
+        "mock_max_unexpected": {
+          "type": "number",
+          "description": "Maximum abundance of taxa not in the mock community.",
+          "default": 0.05,
+          "minimum": 0
+        },
+        "target_gb": {
+          "type": "number",
+          "description": "Per-sample yield target after filtering (Gb); WARN below.",
+          "default": 3.0,
+          "minimum": 0
+        },
+        "min_gb": {
+          "type": "number",
+          "description": "Per-sample yield minimum (Gb); FAIL below.",
+          "default": 1.0,
+          "minimum": 0
+        },
+        "qc_min_reads": {
+          "type": "integer",
+          "description": "Minimum reads after filtering; FAIL below.",
+          "default": 100000,
+          "minimum": 0
+        },
+        "qc_min_mean_q": {
+          "type": "number",
+          "description": "Minimum mean read quality; WARN below.",
+          "default": 10,
+          "minimum": 0
+        },
+        "adapter_warn_pct": {
+          "type": "number",
+          "description": "WARN when this % of reads still carry adapter.",
+          "default": 5,
+          "minimum": 0
+        },
+        "host_warn_pct": {
+          "type": "number",
+          "description": "WARN when this % of reads are human.",
+          "default": 20,
+          "minimum": 0
+        },
+        "balance_ratio": {
+          "type": "number",
+          "description": "WARN when a sample's yield is under this fraction of the run median.",
+          "default": 0.5,
+          "minimum": 0
+        }
+      }
+    },
+    "report_options": {
+      "title": "Report",
+      "type": "object",
+      "fa_icon": "fas fa-file-medical",
+      "description": "Report labels and grouping.",
+      "properties": {
+        "clinic_name": {
+          "type": "string",
+          "description": "Name shown in report titles.",
+          "default": "Panbiome"
+        },
+        "group_col": {
+          "type": "string",
+          "description": "Sample sheet column used to color plots and run PERMANOVA.",
+          "default": "group"
+        }
+      }
+    },
+    "advanced_options": {
+      "title": "Advanced",
+      "type": "object",
+      "fa_icon": "fas fa-cogs",
+      "description": "Resources and container images.",
+      "properties": {
+        "threads": {
+          "type": "integer",
+          "description": "Threads for multi-threaded steps.",
+          "default": 8,
+          "minimum": 1
+        },
+        "big_memory": {
+          "type": "string",
+          "description": "Memory for the heaviest steps (databases, assembly).",
+          "default": "32 GB"
+        },
+        "help": {
+          "type": "boolean",
+          "description": "Print help and exit.",
+          "default": false,
+          "hidden": true
+        },
+        "version": {
+          "type": "boolean",
+          "description": "Print version and exit.",
+          "default": false,
+          "hidden": true
+        },
+        "container_core": {
+          "type": "string",
+          "description": "Container image for core.",
+          "hidden": true
+        },
+        "container_kraken2": {
+          "type": "string",
+          "description": "Container image for kraken2.",
+          "hidden": true
+        },
+        "container_bracken": {
+          "type": "string",
+          "description": "Container image for bracken.",
+          "hidden": true
+        },
+        "container_krona": {
+          "type": "string",
+          "description": "Container image for krona.",
+          "hidden": true
+        },
+        "container_sylph": {
+          "type": "string",
+          "description": "Container image for sylph.",
+          "hidden": true
+        },
+        "container_emu": {
+          "type": "string",
+          "description": "Container image for emu.",
+          "hidden": true
+        },
+        "container_flye": {
+          "type": "string",
+          "description": "Container image for flye.",
+          "hidden": true
+        },
+        "container_medaka": {
+          "type": "string",
+          "description": "Container image for medaka.",
+          "hidden": true
+        },
+        "container_semibin": {
+          "type": "string",
+          "description": "Container image for semibin.",
+          "hidden": true
+        },
+        "container_checkm2": {
+          "type": "string",
+          "description": "Container image for checkm2.",
+          "hidden": true
+        },
+        "container_gtdbtk": {
+          "type": "string",
+          "description": "Container image for gtdbtk.",
+          "hidden": true
+        },
+        "container_amrfinder": {
+          "type": "string",
+          "description": "Container image for amrfinder.",
+          "hidden": true
+        },
+        "container_genomad": {
+          "type": "string",
+          "description": "Container image for genomad.",
+          "hidden": true
+        },
+        "container_pyrodigal": {
+          "type": "string",
+          "description": "Container image for pyrodigal.",
+          "hidden": true
+        },
+        "container_eggnog": {
+          "type": "string",
+          "description": "Container image for eggnog.",
+          "hidden": true
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "#/definitions/input_options"
+    },
+    {
+      "$ref": "#/definitions/run_metadata"
+    },
+    {
+      "$ref": "#/definitions/read_processing"
+    },
+    {
+      "$ref": "#/definitions/host_depletion"
+    },
+    {
+      "$ref": "#/definitions/taxonomy"
+    },
+    {
+      "$ref": "#/definitions/assembly_annotation"
+    },
+    {
+      "$ref": "#/definitions/controls_qc"
+    },
+    {
+      "$ref": "#/definitions/report_options"
+    },
+    {
+      "$ref": "#/definitions/advanced_options"
+    }
+  ]
+}
