@@ -1,33 +1,29 @@
 # Session Handover
-_Generated: 2026-10-27T21:15:36Z_
+_Generated: 2026-10-30T10:58:58Z_
 _Branch: main_
-_Trigger: user request | Context at compact: n/a_
+_Trigger: auto | Context at compact: unknown%_
 _Compact count this project: 1_
 
 ---
 
 ## 🎯 Active Task
 **What we're building/fixing:**
-panbiome-gut-ont v0.1.1 is published. The Nextflow workflow is on GitHub and the core image is on GHCR. The package is still private, and the EPI2ME desktop import has not been opened on this machine.
+creating anything that costs money
 
-**Phase:** Phase 7 publish is done except package visibility and the EPI2ME check.
-**Next action:** Ask before making `ghcr.io/musicofthings/panbiome-gut-ont-core:0.1.0` public. That change cannot be undone. Then, on a machine with EPI2ME, import `musicofthings/panbiome-gut-ont` and confirm the settings form renders from `nextflow_schema.json`.
+**Phase:** Phase 4 test data in `/tmp/panbiome-phase4` | A
+**Next action:** Please run: ```bash aws sso login --profile programmable-bio ``` Once you're signed in, I'll check the region, machine
 
 ---
 
 ## ✅ Completed This Session
-- [x] Phases 0–3: environment, local core image, stub DAG, tool-flag fixes (Kraken2 `--output -` removed, GTDB-Tk `--skip_ani_screen` removed, sample-sheet and report stubs)
-- [x] Phase 4: real tools on the first 209715200 bytes of ENA ERR2906227 with a ten-RefSeq-genome Kraken2/Bracken/sylph database and phage lambda NC_001416.1 as the host decoy. Run 1 profiling exit 0. Medaka weights download fixed. Run 3 Flye and Medaka exit 0. AMRFinderPlus exited 1 with no database. Binning not run.
-- [x] Phase 5: database sizes and commands only. No download. Shotgun pair is GTDB r226. GTDB-Tk for image 2.8.0 is R232 and optional. About 83 GiB free, so the Kraken archive and GTDB-Tk package do not fit.
-- [x] Phase 6: pytest 8 passed. `nextflow inspect` resolved pinned containers. README verification table and `CHANGELOG.md` updated. `manifest.version` is `0.1.1`. Parameter defaults unchanged. Core image tag stays `0.1.0`.
-- [x] Phase 7: public repo https://github.com/musicofthings/panbiome-gut-ont branch `main`. Nextflow 26.10.4 CI stub fixed (`workflow.onComplete` assignment, `publishDir` closures). Actions run 40578822436 passed test and stub. Image pushed. Digest `sha256:5ae5f2c17be6ad2cf9ebe4b9492bea189dc994ccb4b07ac6a084c003c0c7c114`. Package is private and not linked to the repo.
+- [ ] (track completed items here)
 
 ---
 
 ## 🔄 In Progress (Exact Resume Point)
 **Branch:** `main`
-**Last commit:** `060221c Record the GHCR push of the core image.`
-**Next immediate action:** Leave the GHCR package private until the user says to make it public. Do not start another device-code flow unless they are at the browser.
+**Last commit:** `e2e1e5c chore(context): sync from oncophenomics.local — panbiome-gut-ont v0.1.1 publish [2026-10-27T21:16:33Z]`
+**Next immediate action:** Please run: ```bash aws sso login --profile programmable-bio ``` Once you're signed in, I'll check the region, machine
 
 ---
 
@@ -54,16 +50,33 @@ panbiome-gut-ont v0.1.1 is published. The Nextflow workflow is on GitHub and the
 ---
 
 ## 🔧 Commands to Resume
-```bash
-# On any machine after git pull:
-git pull origin main
-# This repo has no scripts/session_sync.sh. The kit script lives in the context-engineering-kit plugin.
-# Read session_handover.md, then continue only when asked.
 
-# Repo and image:
-# https://github.com/musicofthings/panbiome-gut-ont
-# ghcr.io/musicofthings/panbiome-gut-ont-core:0.1.0
-# Package page: https://github.com/users/musicofthings/packages/container/package/panbiome-gut-ont-core
+**This exact conversation** (SDK/CLI transcript resume):
+```bash
+# Same machine AND same directory it started in:
+claude --resume e4fe2a06-3447-4b6b-a744-2025724ed5df
+```
+- Session ID    : `e4fe2a06-3447-4b6b-a744-2025724ed5df`
+- Transcript    : `/Users/theranosis_dx/.claude/projects/-Users-theranosis-dx-projects-panbiome-gut-ont/e4fe2a06-3447-4b6b-a744-2025724ed5df.jsonl`
+- Bound to cwd  : `/Users/theranosis_dx/projects/panbiome-gut-ont`
+- Stored at     : `~/.claude/projects/-Users-theranosis-dx-projects-panbiome-gut-ont/e4fe2a06-3447-4b6b-a744-2025724ed5df.jsonl`
+
+> ⚠️ Transcript resume is **cwd-bound**. It only works from the same directory
+> on the same machine. If this session started in a git **worktree**, that
+> worktree's path is the cwd — resuming from `main` (or after the worktree is
+> deleted) will silently start a *fresh* session. Per the Agent SDK docs, the
+> robust cross-host / cross-worktree path is **not** transcript resume — it's
+> this handover file: read it into a new session's prompt as application state.
+
+**Project state** (any machine — the robust path):
+```bash
+git pull origin main
+bash scripts/session_sync.sh --load
+
+# In Claude Code:
+# /context-health     — verify hooks are wired
+# /handover           — review this file
+# /token-status       — check context usage
 ```
 
 ---
@@ -71,36 +84,39 @@ git pull origin main
 ## 📁 Files Modified This Session
 | File | Status |
 |------|--------|
-| `modules/assembly.nf` | Medaka weight download; GTDB-Tk flag removed; `publishDir` closures |
-| `modules/profiling.nf` | Kraken2 `--output -` removed; `publishDir` closures |
-| `modules/qc.nf` | `publishDir` closures |
-| `modules/ingest.nf` | Stub copies the supplied sample sheet |
-| `modules/reporting.nf` | Stub writes one HTML report per alias |
-| `main.nf` | `workflow.onComplete` assigned inside the entry workflow |
-| `nextflow.config` | `manifest.version` `0.1.1` only. Params unchanged. |
-| `README.md` | Verification table and r226 example paths |
-| `CHANGELOG.md` | v0.1.1 fixes |
-| `docs/DATABASES.md` | r226 pair, sizes, eggNOG host, GTDB-Tk R232 |
-| `docs/VALIDATION_LOG.md` | Phases 0–7 |
-| `.gitignore` | Also excludes `stub_output*/`, `.DS_Store`, `.claude/` |
+| `.gitignore` | modified |
+| `docs/AWS.md` | modified |
+| `docs/DATABASES.md` | modified |
+| `infra/aws/batch.yaml` | modified |
+| `infra/aws/bin/fetch_url` | modified |
+| `infra/aws/build_kraken2.nf` | modified |
+| `infra/aws/fetch_dbs.nf` | modified |
+| `infra/aws/run.sh` | modified |
+| `modules/assembly.nf` | modified |
+| `nextflow.config` | modified |
 
 ---
 
 ## 🌿 Git Context
 ```
 Branch  : main
-Commit  : 060221c
-Status  : clean before this handover file
-Remote  : https://github.com/musicofthings/panbiome-gut-ont.git
+Commit  : e2e1e5c chore(context): sync from oncophenomics.local — panbiome-gut-ont v0.1.1 publish [2026-10-27T21:16:33Z]
+Status  : M .gitignore
+ M docs/DATABASES.md
+ M modules/assembly.nf
+ M nextflow.config
+?? api_docs.md
+?? docs/AWS.md
+?? infra/
 ```
 
 Recent commits:
 ```
+e2e1e5c chore(context): sync from oncophenomics.local — panbiome-gut-ont v0.1.1 publish [2026-10-27T21:16:33Z]
 060221c Record the GHCR push of the core image.
 f0590ff Record the Phase 7 publish checks.
 536588d Defer sample publishDir paths until meta exists.
 4396d8e Move workflow.onComplete into the entry workflow.
-00a4dfc panbiome-gut-ont v0.1.1
 ```
 
 ---
