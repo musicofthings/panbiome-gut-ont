@@ -180,7 +180,8 @@ process SEMIBIN2 {
 
     script:
     """
-    mkdir -p ${meta.id}_bins
+    # S3 work directories cannot hold an empty folder
+    mkdir -p ${meta.id}_bins && touch ${meta.id}_bins/.keep
     printf 'contig\\tbin\\n' > ${meta.id}.contig_bins.tsv
     if [ -s ${contigs} ] && [ -s ${bam} ]; then
         SemiBin2 single_easy_bin -i ${contigs} -b ${bam} -o semibin_out \\
@@ -198,7 +199,8 @@ process SEMIBIN2 {
 
     stub:
     """
-    mkdir -p ${meta.id}_bins
+    # S3 work directories cannot hold an empty folder
+    mkdir -p ${meta.id}_bins && touch ${meta.id}_bins/.keep
     printf 'contig\\tbin\\n' > ${meta.id}.contig_bins.tsv
     echo "semibin stub" > ${meta.id}.SEMIBIN2.versions.txt
     """

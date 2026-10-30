@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### AWS
+
+- `infra/aws/batch.yaml`: CloudFormation stack in `ap-south-1` with a private encrypted S3 bucket, an ECR mirror of the core image, IAM roles, and on-demand AWS Batch queues that scale to zero. Head jobs stop after 72 hours.
+- `infra/aws/run.sh` launches any workflow on Batch. `PANBIOME_REMOTE=1` runs Nextflow itself as a Batch job.
+- `infra/aws/fetch_dbs.nf` downloads sylph r226, CheckM2, geNomad, AMRFinderPlus, eggNOG 5.0.2 and the T2T-CHM13 index to S3. `infra/aws/build_kraken2.nf` builds a 64 GB GTDB r226 Kraken2 + Bracken database. Downloads resume after dropped connections (`infra/aws/bin/fetch_url`).
+- New `awsbatch` profile in `nextflow.config`.
+
+### Workflow
+
+- SemiBin2 always writes `<alias>_bins/.keep`, because S3 work directories cannot hold an empty folder (`modules/assembly.nf`).
+
+### Documentation
+
+- `docs/AWS.md`, `docs/ROADMAP.md` (first real AWS run, web frontend, EPI2ME), README section "Run it on AWS".
+
 ## 0.1.1 — 2026-10-28
 
 Fixes found while running the v0.1.0 draft. Parameter defaults are unchanged, including `medaka_model`, `bracken_read_len`, `sylph_args`, `min_ani`, `min_species_reads`, and `big_memory` (32 GB). The core image tag stays `ghcr.io/musicofthings/panbiome-gut-ont-core:0.1.0`. That image was not rebuilt. The workflow reads `bin/` from the project directory.
