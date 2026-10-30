@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""head_fastq URL OUT MAX_BASES: stream a gzipped FASTQ from URL and write its first complete records,
+up to MAX_BASES bases, to OUT (gzipped). Stops reading once enough bases are written."""
+import gzip
+import sys
+import urllib.request
+
+url, out, max_bases = sys.argv[1], sys.argv[2], int(sys.argv[3])
+reads = bases = 0
+with urllib.request.urlopen(url, timeout=120) as src, gzip.open(src) as fq, gzip.open(out, "wb", compresslevel=4) as dst:
+    while bases < max_bases:
+        rec = [fq.readline() for _ in range(4)]
+        if not rec[3]:
+            break
+        dst.write(b"".join(rec))
+        reads += 1
+        bases += len(rec[1].rstrip(b"\r\n"))
+print(f"head_fastq: {reads} reads, {bases} bases", file=sys.stderr)

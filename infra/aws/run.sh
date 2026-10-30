@@ -8,6 +8,7 @@
 # PANBIOME_REMOTE=1 uploads this folder to s3://$BUCKET/launch/<run-name>/ and runs Nextflow itself as a
 # Batch job on panbiome-ondemand, so the run does not stop when the laptop or the SSO session does.
 # Its log goes to CloudWatch (/aws/batch/job) and to s3://$BUCKET/launch/<run-name>/nextflow.log.
+# PANBIOME_AFTER="JOB_ID [JOB_ID...]" holds that head job until those Batch jobs succeed; if one fails, so does it.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -47,8 +48,10 @@ if [[ "${PANBIOME_REMOTE:-0}" == 1 ]]; then
   cmd+="; /opt/aws-cli/bin/aws s3 cp .nextflow.log $launch/nextflow.log --only-show-errors; exit \${rc:-1}"
   python3 -c 'import json,sys; print(json.dumps({"command": ["bash", "-c", sys.argv[1]]}))' "$cmd" > "$staging/overrides.json"
 
+  after=(); for id in ${PANBIOME_AFTER:-}; do after+=("jobId=$id"); done
+  if (( ${#after[@]} )); then after=(--depends-on "${after[@]}"); fi
   aws batch submit-job --job-name "panbiome-head-$run_name" --job-queue panbiome-ondemand \
-    --job-definition "$(output HeadJobDefinition)" \
+    --job-definition "$(output HeadJobDefinition)" ${after[@]+"${after[@]}"} \
     --container-overrides "file://$staging/overrides.json" \
     --query '[jobName,jobId]' --output text
   exit 0

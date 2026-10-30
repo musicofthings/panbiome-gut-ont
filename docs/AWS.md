@@ -10,6 +10,7 @@ Databases live in S3 and tasks run on AWS Batch in `ap-south-1`. Nothing large i
 | `infra/aws/run.sh` | Launches any of the workflows with the stack's bucket, job role and ECR image. |
 | `infra/aws/fetch_dbs.nf` | Downloads sylph r226 + lineage map, CheckM2, geNomad, AMRFinderPlus, eggNOG 5.0.2 and the T2T-CHM13 minimap2 index into `s3://BUCKET/db/`. |
 | `infra/aws/build_kraken2.nf` | Builds the 64 GB GTDB r226 Kraken2 + Bracken database into `s3://BUCKET/db/k2_gtdb_r226_64GB`. |
+| `infra/aws/fetch_test_reads.nf` | Writes the first ~3 Gb of public ENA run ERR2906227 (ZymoBIOMICS mock, ONT) and a one-row sample sheet to `s3://BUCKET/test_data/zymo/`. |
 
 | Queue | Machines | Used by |
 | --- | --- | --- |
@@ -57,6 +58,20 @@ PANBIOME_PROFILE=awsbatch,test infra/aws/run.sh stub-test -stub-run \
 # Databases (long, so run Nextflow on Batch)
 PANBIOME_REMOTE=1 PANBIOME_SCRIPT=infra/aws/fetch_dbs.nf infra/aws/run.sh fetch-dbs --db_dir s3://BUCKET/db
 PANBIOME_REMOTE=1 PANBIOME_SCRIPT=infra/aws/build_kraken2.nf infra/aws/run.sh build-kraken2 --db_dir s3://BUCKET/db
+```
+
+## Chaining runs
+
+`PANBIOME_AFTER="JOB_ID [JOB_ID...]"` submits the head job held in `PENDING` until those Batch jobs succeed. If any of them fails, Batch fails the held job too, so nothing starts on a broken database. No machine runs while a job waits, and nothing polls.
+
+```bash
+# First real-data run, started automatically after the Kraken2 build and the test reads (submitted 2026-10-30)
+PANBIOME_REMOTE=1 PANBIOME_AFTER="BUILD_HEAD_JOB_ID FETCH_HEAD_JOB_ID" infra/aws/run.sh zymo-aws1 \
+  --fastq s3://BUCKET/test_data/zymo/fastq_pass --sample_sheet s3://BUCKET/test_data/zymo/sample_sheet.csv \
+  --host_ref s3://BUCKET/db/host/chm13v2.0.map-ont.mmi --kraken2_db s3://BUCKET/db/k2_gtdb_r226_64GB \
+  --sylph_db s3://BUCKET/db/sylph/gtdb-r226-c200-dbv2.syl2db --sylph_lineage_map s3://BUCKET/db/sylph/gtdb_r226_map.tsv \
+  --checkm2_db s3://BUCKET/db/checkm2/CheckM2_database/uniref100.KO.1.dmnd --amrfinder_db s3://BUCKET/db/amrfinder/latest \
+  --genomad_db s3://BUCKET/db/genomad/genomad_db --eggnog_db s3://BUCKET/db/eggnog
 ```
 
 Results go to `s3://BUCKET/results/<run-name>/` and the work directory to `s3://BUCKET/work/<run-name>/`. Deleting the stack keeps the bucket.

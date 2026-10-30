@@ -5,7 +5,7 @@ Status on 2026-10-30: the workflow runs on AWS Batch (`ap-south-1`, on-demand on
 ## Phase A: first real run on AWS (next)
 
 1. Finish `build_kraken2.nf` and check `db/k2_gtdb_r226_64GB` (`kraken2-inspect`, Bracken `database1000mers.kmer_distrib` present).
-2. Run one real sample end to end with `PANBIOME_REMOTE=1`, all database paths on S3. This is the first real-data run of SemiBin2, CheckM2, AMRFinderPlus, geNomad and eggNOG.
+2. Run one real sample end to end with `PANBIOME_REMOTE=1`, all database paths on S3. Queued on 2026-10-30 as `zymo-aws1` (first ~3 Gb of the public ZymoBIOMICS mock run ERR2906227), held until the Kraken2 build and the read download succeed; see "Chaining runs" in [AWS.md](AWS.md). This is the first real-data run of SemiBin2, CheckM2, AMRFinderPlus, geNomad and eggNOG.
 3. Record peak memory and wall time per process from the trace, then set `big_memory` and per-process limits from those numbers.
 4. Record the cost of that run (Cost Explorer, tag `project=panbiome-gut-ont`).
 
