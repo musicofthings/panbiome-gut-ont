@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# dbcache S3_URI: print the path of a local copy of S3_URI (one object or a folder) in this machine's database
+# cache, downloading it first if the machine does not have it yet. Tasks that start together wait for one
+# download instead of each fetching their own. With --db_cache, Nextflow passes large databases this way
+# instead of staging a fresh copy into every task.
+set -euo pipefail
+
+uri=${1%/}
+root=${PANBIOME_DB_CACHE:-/mnt/dbcache}
+aws=${PANBIOME_AWS_CLI:-/opt/aws-cli/bin/aws}
+# Written by the launch template: more parallel parts per transfer than the CLI's default
+[ -f /opt/aws-cli/s3.config ] && export AWS_CONFIG_FILE=/opt/aws-cli/s3.config
+
+dest=$root/${uri#s3://}
+lock=$dest.lock
+
+if [ ! -e "$dest.complete" ]; then
+  mkdir -p "$(dirname "$dest")"
+  owner=0
+  while true; do
+    if mkdir "$lock" 2>/dev/null; then
+      owner=1
+      trap 'rm -rf "$lock"' EXIT
+      break
+    fi
+    # A lock older than an hour belongs to a task that died mid-download
+    if [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then rm -rf "$lock"; continue; fi
+    [ -e "$dest.complete" ] && break
+    sleep 10
+  done
+  if [ "$owner" = 1 ] && [ ! -e "$dest.complete" ]; then
+    rm -rf "$dest" "$dest.part"
+    start=$(date +%s)
+    if [ -n "$("$aws" s3 ls "$uri/" 2>/dev/null | head -1)" ]; then
+      "$aws" s3 sync "$uri/" "$dest.part/" --only-show-errors
+    else
+      "$aws" s3 cp "$uri" "$dest.part" --only-show-errors
+    fi
+    mv "$dest.part" "$dest"
+    touch "$dest.complete"
+    echo "dbcache: downloaded $uri in $(( $(date +%s) - start ))s" >&2
+  fi
+fi
+touch "$dest.complete"  # last use, for clearing old entries by hand
+echo "$dest"

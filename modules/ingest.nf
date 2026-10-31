@@ -53,10 +53,10 @@ process INGEST {
             *.bam)
                 samtools view -H "\$f" | grep '^@RG' >> ${meta.id}.header.txt || true
                 samtools fastq -@ ${task.cpus} -F 0x900 "\$f" ;;
-            *.gz) zcat "\$f" ;;
+            *.gz) bgzip -dc -@ ${task.cpus} "\$f" ;;
             *)    cat "\$f" ;;
         esac
-    done | gzip -c > ${meta.id}.raw.fastq.gz
+    done | bgzip -@ ${task.cpus} -l 1 -c > ${meta.id}.raw.fastq.gz
     """
 
     stub:

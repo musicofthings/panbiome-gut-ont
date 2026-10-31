@@ -5,7 +5,7 @@ Status on 2026-10-30: the workflow runs on AWS Batch (`ap-south-1`, on-demand on
 ## Phase A: first real run on AWS (next)
 
 1. Finish `build_kraken2.nf` and check `db/k2_gtdb_r226_64GB` (`kraken2-inspect`, Bracken `database1000mers.kmer_distrib` present).
-2. Run one real sample end to end with `PANBIOME_REMOTE=1`, all database paths on S3. Queued on 2026-10-30 as `zymo-aws1` (first ~3 Gb of the public ZymoBIOMICS mock run ERR2906227), held until the Kraken2 build and the read download succeed; see "Chaining runs" in [AWS.md](AWS.md). This is the first real-data run of SemiBin2, CheckM2, AMRFinderPlus, geNomad and eggNOG.
+2. Run one real sample end to end with `PANBIOME_REMOTE=1`, all database paths on S3. Queued as `zymo-aws1` (first ~3 Gb of the public ZymoBIOMICS mock run ERR2906227). The Kraken2 build succeeded. Resubmitted on 2026-10-31 behind a new read download from NCBI's SRA copy on AWS, because ENA was too slow. Also queued on 2026-10-31: `zymo-fecal1`, the first ~3 Gb of the ZymoBIOMICS Fecal Reference D6323 (EPI2ME `zymo_fecal_2025.05`, R10.4.1 SUP 5.0.0), which is the dataset to use from now on; see "Chaining runs" in [AWS.md](AWS.md). This is the first real-data run of SemiBin2, CheckM2, AMRFinderPlus, geNomad and eggNOG.
 3. Record peak memory and wall time per process from the trace, then set `big_memory` and per-process limits from those numbers.
 4. Record the cost of that run (Cost Explorer, tag `project=panbiome-gut-ont`).
 
@@ -30,11 +30,17 @@ Screens: sign in; runs list (status, samples, start time, cost estimate); new ru
 
 Rules carried over from the workspace conventions: the frontend calls the API only with relative `/api/...` paths; the Vite dev server proxies `/api` to the local FastAPI; the API sets CORS explicitly (`http://localhost:5173` and `http://127.0.0.1:5173` in development, `ALLOWED_ORIGINS` from the environment in production, never `*`); `.env.example` lists `ALLOWED_ORIGINS` and the API base settings. Light theme only.
 
-Open decisions before building:
+Decided on 2026-10-31:
 
-- Who signs in (Panbiome lab staff only, or external clinics too) and whether sample data must stay in India (it does today: everything is in `ap-south-1`).
-- Hosting the frontend on CloudFront or Cloudflare Pages.
-- Build our own or use Seqera Platform (Nextflow Tower), which already provides launch, monitoring and reports on AWS Batch. Seqera is faster to stand up; a custom app gives the Panbiome-specific sample sheet checks, control-status banner and report pages.
+- Build our own app rather than use Seqera Platform. The first part is a read-only run monitor; upload and launch come next.
+- Only Panbiome lab staff sign in (an invite-only Cognito user pool). Sample data stays in `ap-south-1`.
+- The frontend is hosted on S3 + CloudFront in `ap-south-1`, in the same account as the data.
+
+Status:
+
+1. Run monitor: built for local use ([MONITOR.md](MONITOR.md)). It lists runs and shows the step graph with per-sample task status, logs, parameters and reports. Status comes from AWS Batch while a run is going and from `trace.txt` once it has finished, with no change to the workflow. Not yet deployed and has no sign-in.
+2. Hosting: `infra/aws/web.yaml` and `infra/aws/deploy_web.sh` (Cognito invite-only user pool with TOTP MFA, the API on Lambda behind an HTTP API with a JWT authorizer, the site on S3 + CloudFront). Written on 2026-10-31, not deployed yet.
+3. Then: upload (presigned multipart), launch through the head job definition, DynamoDB run records, cancel, and cost per run. Live progress may move to Nextflow `-with-weblog` once the API is public; until then, Batch is polled every 15 seconds.
 
 ## Phase C: EPI2ME integration
 

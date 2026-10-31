@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Split a minimap2 SAM stream (stdin) into host and non-host reads.
+"""Split reads into host and non-host using minimap2's PAF output (run with -c, so the
+alignment is base-level). Reads FASTQ on stdin and writes the NON-HOST reads to stdout.
 
 Only the NON-HOST reads are written to disk. Host reads are counted and
 discarded, so no human sequence leaves this step (donor privacy; also covers
 human PGx reads carried over from a previous library on a washed flow cell).
 
-A read is "host" when its primary alignment covers at least
---min_aligned_frac of the read and mapq >= --min_mapq. Partial alignments are
+A read is "host" when its primary alignment (the first PAF line for the read) covers at
+least --min_aligned_frac of the read and mapq >= --min_mapq. The aligned part is the query
+span of the alignment, which equals the M/I/=/X bases of its CIGAR. Partial alignments are
 kept as non-host so that microbial reads with short human-like segments are not
 lost (dynamic alignment-length criterion).
 
@@ -16,14 +18,10 @@ carryover from the earlier PGx library.
 """
 import argparse
 import bisect
-import gzip
-import re
 import sys
 
 import gutlib as g
 
-CIGAR_RE = re.compile(r"(\d+)([MIDNSHP=X])")
-COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
 def load_bed(path):
@@ -55,7 +53,7 @@ def overlaps(iv, chrom, start, end):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--nonhost", required=True, help="output FASTQ.gz")
+    ap.add_argument("--paf", required=True, help="minimap2 -c --secondary=no PAF against the host reference")
     ap.add_argument("--stats", required=True, help="output JSON")
     ap.add_argument("--sample", required=True)
     ap.add_argument("--min_aligned_frac", type=float, default=0.5)
@@ -65,48 +63,36 @@ def main():
     a = ap.parse_args()
 
     bed = load_bed(a.pgx_bed)
-    total = host = partial = nonhost = carry = 0
-    with gzip.open(a.nonhost, "wt") as out:
-        for line in sys.stdin:
-            if line.startswith("@"):
+    host_ids = set()
+    seen = set()
+    host = partial = carry = 0
+    with open(a.paf) as fh:
+        for line in fh:
+            f = line.split("\t", 12)
+            qname = f[0]
+            if qname in seen:  # supplementary alignments follow the primary
                 continue
-            f = line.rstrip("\n").split("\t")
-            if len(f) < 11:
-                continue
-            flag = int(f[1])
-            if flag & 0x900:  # secondary / supplementary
-                continue
-            total += 1
-            qname, rname, pos, mapq = f[0], f[2], int(f[3]), int(f[4])
-            cigar, seq, qual = f[5], f[9], f[10]
-            is_host = False
-            if not flag & 4 and cigar != "*" and seq != "*":
-                q_aln = ref_len = 0
-                for n, op in CIGAR_RE.findall(cigar):
-                    n = int(n)
-                    if op in "M=XI":
-                        q_aln += n
-                    if op in "M=XDN":
-                        ref_len += n
-                frac = q_aln / max(len(seq), 1)
-                if frac >= a.min_aligned_frac and mapq >= a.min_mapq:
-                    is_host = True
-                    host += 1
-                    if overlaps(bed, rname, pos - 1, pos - 1 + ref_len):
-                        carry += 1
-                else:
-                    partial += 1
-            if is_host:
-                continue
-            if seq == "*":
-                continue
-            if flag & 16:
-                seq = seq.translate(COMP)[::-1]
-                qual = qual[::-1]
-            if qual == "*":
-                qual = "I" * len(seq)
-            out.write("@%s\n%s\n+\n%s\n" % (qname, seq, qual))
-            nonhost += 1
+            seen.add(qname)
+            qlen, qstart, qend, mapq = int(f[1]), int(f[2]), int(f[3]), int(f[11])
+            if (qend - qstart) / max(qlen, 1) >= a.min_aligned_frac and mapq >= a.min_mapq:
+                host_ids.add(qname)
+                host += 1
+                if overlaps(bed, f[5], int(f[7]), int(f[8])):
+                    carry += 1
+            else:
+                partial += 1
+
+    total = nonhost = 0
+    out = sys.stdout
+    lines = iter(sys.stdin)
+    for header in lines:
+        seq, plus, qual = next(lines), next(lines), next(lines)
+        total += 1
+        qname = header[1:].split(None, 1)[0]
+        if qname in host_ids:
+            continue
+        out.write(f"@{qname}\n{seq}+\n{qual}")
+        nonhost += 1
 
     stats = {
         "sample": a.sample,

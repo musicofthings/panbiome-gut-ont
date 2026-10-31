@@ -2,7 +2,7 @@
 
 Oxford Nanopore gut microbiome workflow for human stool, written in Nextflow (DSL2) and laid out to import into the **EPI2ME** desktop app. Built for Panbiome: 16 stool samples per PromethION flow cell, whole-genome shotgun, 3 to 4 Gb per sample, run on a washed flow cell after a PGx library.
 
-> **Status: v0.1.1.** Python helpers and the parameter schema are unit-tested. The stub DAG passed on synthetic `test_data/`. Kraken2, Bracken, sylph, Flye, and Medaka passed on a 200 MB prefix of public Zymo ONT run ERR2906227 with a ten-genome database and a phage-lambda host decoy. SemiBin2, CheckM2, GTDB-Tk, AMRFinderPlus, geNomad, eggNOG, and Emu have not been run on real databases. The workflow also runs on AWS Batch (stub run passed 48/48 on 2026-10-30); see [Run it on AWS](#run-it-on-aws). See [Verification status](#verification-status) and [CHANGELOG.md](CHANGELOG.md).
+> **Status: v0.1.1.** Python helpers and the parameter schema are unit-tested. The stub DAG passed on synthetic `test_data/`. Kraken2, Bracken, sylph, Flye, and Medaka passed on a 200 MB prefix of public Zymo ONT run ERR2906227 with a ten-genome database and a phage-lambda host decoy. The workflow runs on AWS Batch with full-size databases: the first real-data run (ZymoBIOMICS mock, 2026-10-31) completed 23 of 25 steps, including SemiBin2, AMRFinderPlus and geNomad; CheckM2 and eggNOG failed for reasons since fixed and have not been rerun. A run on the ZymoBIOMICS Fecal Reference (R10.4.1) is in progress. GTDB-Tk and Emu have not been run on real databases. See [Run it on AWS](#run-it-on-aws). See [Verification status](#verification-status) and [CHANGELOG.md](CHANGELOG.md).
 
 ## What it does
 
@@ -51,14 +51,22 @@ Databases live in a private S3 bucket and tasks run on AWS Batch in `ap-south-1`
 ```bash
 aws sso login --profile programmable-bio
 PANBIOME_REMOTE=1 infra/aws/run.sh run1 \
-  --fastq s3://BUCKET/uploads/run1/fastq_pass --sample_sheet s3://BUCKET/uploads/run1/samples.csv \
-  --host_ref s3://BUCKET/db/host/chm13v2.0.map-ont.mmi --kraken2_db s3://BUCKET/db/k2_gtdb_r226_64GB \
-  --sylph_db s3://BUCKET/db/sylph/gtdb-r226-c200-dbv2.syl2db --sylph_lineage_map s3://BUCKET/db/sylph/gtdb_r226_map.tsv
+  --fastq s3://BUCKET/uploads/run1/fastq_pass --sample_sheet s3://BUCKET/uploads/run1/samples.csv
 ```
 
-This command shape has not yet been run on real data (see the roadmap). `PANBIOME_REMOTE=1` runs Nextflow itself as a Batch job, so the run keeps going after the laptop sleeps or the SSO session expires. Results go to `s3://BUCKET/results/<run-name>/`. Kraken2 on AWS uses a 64 GB GTDB r226 build ([infra/aws/build_kraken2.nf](infra/aws/build_kraken2.nf)), because the account has no quota for the 1 TB memory machines the full 644 GB database needs.
+The databases under `s3://BUCKET/db/` are preset for `main.nf` ([infra/aws/databases.config](infra/aws/databases.config)), including `--kraken2_confidence 0.005` for the 64 GB Kraken2 build. Any `--param` on the command line overrides the preset.
 
-Next phases (first real run on AWS, a web frontend, EPI2ME integration) are planned in [docs/ROADMAP.md](docs/ROADMAP.md).
+`PANBIOME_REMOTE=1` runs Nextflow itself as a Batch job, so the run keeps going after the laptop sleeps or the SSO session expires. Results go to `s3://BUCKET/results/<run-name>/`. Kraken2 on AWS uses a 64 GB GTDB r226 build ([infra/aws/build_kraken2.nf](infra/aws/build_kraken2.nf)), because the account has no quota for the 1 TB memory machines the full 644 GB database needs. The preset uses `--kraken2_confidence 0.005` with it, not the default 0.05: the build keeps about 9.6% of k-mers, and at 0.05 only 18.6% of fecal reference reads reached species level (72.8% at 0.005). See [docs/DATABASES.md](docs/DATABASES.md).
+
+On AWS:
+
+- Each task machine keeps one copy of every database it uses (`/mnt/dbcache`, [bin/dbcache](bin/dbcache)), so a batch of samples does not download the 64 GB Kraken2 database, eggNOG and the human index once per task. Tool images come from an ECR pull-through cache of quay.io.
+- The task cache is kept in S3 while a run goes, so `PANBIOME_RESUME=1 infra/aws/run.sh <run-name> ...` reuses every finished task, even after the head machine was lost. A head job whose machine is terminated is retried and resumes by itself.
+- Details are in [docs/AWS.md](docs/AWS.md) under "Databases, caching and transfers" and "Resuming a run".
+
+To follow runs in a browser, use the run monitor ([docs/MONITOR.md](docs/MONITOR.md)). It shows each run's pipeline steps with live status from AWS Batch, plus task logs and reports. It runs locally, or on AWS (S3 + CloudFront, API on Lambda) behind an invite-only Cognito sign-in with MFA for lab staff; `infra/aws/deploy_web.sh` deploys it.
+
+Next phases (first real run on AWS, the rest of the web frontend, EPI2ME integration) are planned in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Sample sheet
 
@@ -102,15 +110,16 @@ All thresholds are placeholders: QC limits, mock limits (`mock_max_bray`, `mock_
 
 | Part | Status |
 | --- | --- |
-| Python helpers (`bin/`) | Passed. `python3 -m pytest tests -q` on 2026-10-28: 8 passed. Synthetic unit tests. |
-| Parameter schema vs `nextflow.config` | Passed. Params are unchanged, so `scripts/make_schema.py` was not re-run. The same pytest checks every `params` key and default. |
-| Nextflow DAG, channel wiring, `-stub-run` | Passed on the synthetic sheet in `test_data/` (P001, P002, BLANK1). `bash tests/stub_run.sh` after the stub fix: 48 tasks and one sample report each. Also passed: `--assay 16s`, `--assay both`, `--skip_assembly`, `--skip_host_depletion`, `--control_summary`. The stub was not re-run after the Kraken2, GTDB-Tk, and Medaka script edits. Those edits left the stub blocks as they were. |
+| Python helpers (`bin/`) | Passed. `python3 -m pytest tests -q` on 2026-10-31: 8 passed. Synthetic unit tests. `host_split.py` now reads minimap2 PAF; on 400 simulated reads it kept the same reads with identical sequences as the SAM version. |
+| Parameter schema vs `nextflow.config` | Passed. `scripts/make_schema.py` re-run on 2026-10-31 for `db_cache`. The same pytest checks every `params` key and default. |
+| Nextflow DAG, channel wiring, `-stub-run` | Passed on the synthetic sheet in `test_data/` (P001, P002, BLANK1). `bash tests/stub_run.sh` after the stub fix: 48 tasks and one sample report each. Also passed: `--assay 16s`, `--assay both`, `--skip_assembly`, `--skip_host_depletion`, `--control_summary`. Re-run on 2026-10-31 with Nextflow 26.10.4 after the database-cache and host-depletion changes: 48 of 48 tasks, and 64 of 64 with `--db_cache true` and all S3 database paths. |
 | Kraken2, Bracken, sylph, host depletion, QC, reconcile, HTML report | Passed on small data. First 209715200 bytes of ENA ERR2906227 (repaired to 52677 reads, 208636938 bases). Kraken2, Bracken, and sylph used the same ten RefSeq genomes. Host decoy: Enterobacteria phage lambda NC_001416.1. Run 1 used `--skip_binning --skip_assembly` and exited 0. Eight species were kept where both methods agreed. |
 | Flye and Medaka | Passed on small data. Same reads and databases, run 3. Flye: 467 contigs, 7928514 bp, N50 20795. Medaka: 467 contigs, 7858240 bp, N50 20573, model file `r1041_e82_400bps_sup_v5.0.0_model_pt.tar.gz`. |
-| SemiBin2, CheckM2, GTDB-Tk, geNomad, eggNOG, Emu | Not run on real data. |
-| AMRFinderPlus | Not run. With no `--amrfinder_db`, the pinned image exited 1 because `/usr/local/share/amrfinderplus/data/latest` is absent. |
+| SemiBin2, geNomad, AMRFinderPlus | Passed on AWS on 2026-10-31 (`zymo-aws1`, first ~3 Gb of the ZymoBIOMICS mock ERR2906227): 9 SemiBin2 bins, AMRFinderPlus and geNomad completed with the S3 databases. |
+| CheckM2, eggNOG | Failed in `zymo-aws1`: CheckM2's container did not start within 4 minutes while Kraken2 staged its database (fixed with faster disks and a 10-minute limit), and eggNOG-mapper rejected a missing output folder (fixed). Not rerun yet. |
+| GTDB-Tk, Emu | Not run on real data. |
 | Container tags | Passed as a resolution check on 2026-10-28. `nextflow inspect -profile standard` mapped each included process to the tag in `nextflow.config`. Core image `ghcr.io/musicofthings/panbiome-gut-ont-core:0.1.0` is on GHCR (private) and mirrored to ECR in `ap-south-1` with the same digest. |
-| AWS Batch | Stub run passed on 2026-10-30: `stub-test4`, 48 of 48 tasks, report written to S3. Database downloads (sylph r226, CheckM2, geNomad, AMRFinderPlus, eggNOG 5.0.2, T2T-CHM13 index) finished. No real sample has been run on AWS. |
+| AWS Batch | Stub run passed on 2026-10-30: `stub-test4`, 48 of 48 tasks, report written to S3. Database downloads (sylph r226, CheckM2, geNomad, AMRFinderPlus, eggNOG 5.0.2, T2T-CHM13 index) and the 64 GB Kraken2 build finished. Real data from 2026-10-31: see the rows above. Kraken2 with the 64 GB build classified 96% of mock reads at confidence 0 (the eight mock bacteria on top) and 0.14% at 0.05. |
 
 Details, commands, and trace peaks are in [docs/VALIDATION_LOG.md](docs/VALIDATION_LOG.md).
 
@@ -127,4 +136,4 @@ Placeholder thresholds (QC, mock Bray-Curtis, AMR, watchlist) were not changed.
 
 ## Layout
 
-`main.nf` workflow, `modules/` processes, `bin/` helper scripts, `assets/` watchlist and functional targets, `nextflow_schema.json` (generated by `scripts/make_schema.py`), `tests/` pytest and stub run, `docker/` core image, `infra/aws/` AWS stack, launcher and database workflows.
+`main.nf` workflow, `modules/` processes, `bin/` helper scripts, `assets/` watchlist and functional targets, `nextflow_schema.json` (generated by `scripts/make_schema.py`), `tests/` pytest and stub run, `docker/` core image, `infra/aws/` AWS stack, launcher and database workflows, `api/` and `web/` run monitor.

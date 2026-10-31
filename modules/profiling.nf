@@ -7,7 +7,7 @@ process KRAKEN2 {
 
     input:
     tuple val(meta), path(reads)
-    path db
+    tuple path(db), val(db_uri)
 
     output:
     tuple val(meta), path("${meta.id}.kreport"), emit: report
@@ -15,9 +15,11 @@ process KRAKEN2 {
     path "${meta.id}.kraken2.out.gz", optional: true
 
     script:
+    def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
     def mm = params.kraken2_memory_mapping ? '--memory-mapping' : ''
     """
-    kraken2 --db ${db} --threads ${task.cpus} --confidence ${params.kraken2_confidence} ${mm} \\
+    DB=${db_path}
+    kraken2 --db \$DB --threads ${task.cpus} --confidence ${params.kraken2_confidence} ${mm} \\
         --report ${meta.id}.kreport ${reads} | gzip -c > ${meta.id}.kraken2.out.gz
     echo "kraken2 \$(kraken2 --version | head -1)" > ${meta.id}.KRAKEN2.versions.txt
     """
@@ -38,15 +40,17 @@ process BRACKEN {
 
     input:
     tuple val(meta), path(kreport)
-    path db
+    tuple path(db), val(db_uri)
 
     output:
     tuple val(meta), path("${meta.id}.bracken"), emit: bracken
     path "${meta.id}.BRACKEN.versions.txt", emit: versions
 
     script:
+    def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
     """
-    bracken -d ${db} -i ${kreport} -o ${meta.id}.bracken -w ${meta.id}.bracken.kreport \\
+    DB=${db_path}
+    bracken -d \$DB -i ${kreport} -o ${meta.id}.bracken -w ${meta.id}.bracken.kreport \\
         -r ${params.bracken_read_len} -l S -t ${params.bracken_threshold}
     echo "bracken \$(bracken -v 2>&1 | head -1)" > ${meta.id}.BRACKEN.versions.txt
     """
@@ -118,15 +122,17 @@ process SYLPH {
 
     input:
     tuple val(meta), path(reads)
-    path db
+    tuple path(db), val(db_uri)
 
     output:
     tuple val(meta), path("${meta.id}.sylph.tsv"), emit: profile
     path "${meta.id}.SYLPH.versions.txt", emit: versions
 
     script:
+    def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
     """
-    sylph profile ${db} ${reads} -t ${task.cpus} ${params.sylph_args} -o ${meta.id}.sylph.tsv
+    DB=${db_path}
+    sylph profile \$DB ${reads} -t ${task.cpus} ${params.sylph_args} -o ${meta.id}.sylph.tsv
     echo "sylph \$(sylph --version 2>&1 | head -1)" > ${meta.id}.SYLPH.versions.txt
     """
 
@@ -169,15 +175,17 @@ process EMU {
 
     input:
     tuple val(meta), path(reads)
-    path db
+    tuple path(db), val(db_uri)
 
     output:
     tuple val(meta), path("${meta.id}.emu.tsv"), emit: profile
     path "${meta.id}.EMU.versions.txt", emit: versions
 
     script:
+    def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
     """
-    emu abundance ${reads} --db ${db} --type map-ont --threads ${task.cpus} \\
+    DB=${db_path}
+    emu abundance ${reads} --db \$DB --type map-ont --threads ${task.cpus} \\
         --output-dir emu_out --output-basename ${meta.id} --keep-counts
     cp emu_out/${meta.id}_rel-abundance.tsv ${meta.id}.emu.tsv
     echo "emu \$(emu --version 2>&1 | head -1)" > ${meta.id}.EMU.versions.txt

@@ -83,27 +83,32 @@ def test_samplesheet_ok_and_errors(tmp_path):
     assert "No sample sheet" in open(tmp_path / "w3.txt").read()
 
 
-def sam_line(name, flag, rname, pos, cigar, seq):
-    return "\t".join([name, str(flag), rname, str(pos), "60", cigar, "*", "0", "0", seq, "I" * len(seq)]) + "\n"
+def paf_line(name, qlen, qstart, qend, tname, tstart, tend, mapq=60):
+    return "\t".join(map(str, [name, qlen, qstart, qend, "+", tname, 10_000_000, tstart, tend,
+                                qend - qstart, tend - tstart, mapq, "tp:A:P"])) + "\n"
 
 
 def test_host_split(tmp_path):
     rng = random.Random(3)
     bed = tmp_path / "pgx.bed"
     bed.write_text("chr1\t1000\t2000\n")
-    s100 = rand_seq(100, rng)
-    sam = "@HD\tVN:1.6\n"
-    sam += sam_line("host_pgx", 0, "chr1", 1500, "100M", s100)       # host, in PGx region
-    sam += sam_line("host_other", 16, "chr2", 5000, "100M", s100)    # host, elsewhere
-    sam += sam_line("partial", 0, "chr1", 100, "20M80S", s100)       # 20% aligned -> kept
-    sam += sam_line("micro", 4, "*", 0, "*", s100)                   # unmapped -> kept
-    run("host_split.py", "--nonhost", tmp_path / "nh.fq.gz", "--stats", tmp_path / "h.json", "--sample", "s1",
-        "--pgx_bed", bed, "--carryover_warn_reads", 1, stdin=sam)
+    paf = tmp_path / "host.paf"
+    paf.write_text(
+        paf_line("host_pgx", 100, 0, 100, "chr1", 1499, 1599)        # host, in PGx region
+        + paf_line("host_pgx", 100, 0, 30, "chr5", 0, 30)            # supplementary: ignored
+        + paf_line("host_other", 100, 0, 100, "chr2", 4999, 5099)    # host, elsewhere
+        + paf_line("partial", 100, 80, 100, "chr1", 99, 119)         # 20% aligned -> kept
+    )
+    fastq = "".join(f"@{n} runid=x\n{rand_seq(100, rng)}\n+\n{'I' * 100}\n"
+                    for n in ["host_pgx", "partial", "host_other", "micro"])  # micro: unmapped -> kept
+    out = run("host_split.py", "--paf", paf, "--stats", tmp_path / "h.json", "--sample", "s1",
+              "--pgx_bed", bed, "--carryover_warn_reads", 1, stdin=fastq)
     st = json.load(open(tmp_path / "h.json"))
-    assert st["host_reads"] == 2 and st["nonhost_reads"] == 2 and st["pgx_carryover_reads"] == 1
-    assert st["pgx_carryover_flag"] is True
-    names = [l[1:].strip() for i, l in enumerate(gzip.open(tmp_path / "nh.fq.gz", "rt")) if i % 4 == 0]
-    assert sorted(names) == ["micro", "partial"]
+    assert st["total_reads"] == 4 and st["host_reads"] == 2 and st["host_partial_kept_reads"] == 1
+    assert st["nonhost_reads"] == 2 and st["pgx_carryover_reads"] == 1 and st["pgx_carryover_flag"] is True
+    lines = out.stdout.splitlines()
+    assert [l[1:] for l in lines[0::4]] == ["partial", "micro"]
+    assert lines[3] == "I" * 100
 
 
 KREPORT = (" 10.00\t100\t0\tR\t1\troot\n"

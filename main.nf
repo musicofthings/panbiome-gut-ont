@@ -72,6 +72,20 @@ def optFile(value) {
     return value ? file(value, checkIfExists: true) : noFile()
 }
 
+// A database input: [file, ''] staged into the task as usual, or with --db_cache and an s3:// path,
+// [placeholder, uri] so the task copies it once per machine into the host cache (bin/dbcache).
+def dbInput(value) {
+    def none = file("${workflow.projectDir}/assets/NO_DB")
+    if (!value) {
+        return [none, '']
+    }
+    def db = file(value, checkIfExists: true)
+    if (params.db_cache && value.toString().startsWith('s3://')) {
+        return [none, value.toString().replaceAll('/+$', '')]
+    }
+    return [db, '']
+}
+
 // left join on the first element, replacing missing items with the NO_FILE placeholder
 def joinOpt(left, right) {
     def nf = noFile()
@@ -137,7 +151,7 @@ workflow {
         nonhost = HOST_SKIP.out.reads
         host_stats = HOST_SKIP.out.stats
     } else {
-        HOST_DEPLETION(FILTER_READS.out.reads, file(params.host_ref, checkIfExists: true), optFile(params.pgx_regions))
+        HOST_DEPLETION(FILTER_READS.out.reads, dbInput(params.host_ref), optFile(params.pgx_regions))
         nonhost = HOST_DEPLETION.out.reads
         host_stats = HOST_DEPLETION.out.stats
         host_versions = HOST_DEPLETION.out.versions
@@ -156,21 +170,21 @@ workflow {
     def tool_versions = FILTER_READS.out.versions.mix(host_versions)
 
     if (shotgun && params.kraken2_db) {
-        KRAKEN2(nonhost, file(params.kraken2_db, checkIfExists: true))
-        BRACKEN(KRAKEN2.out.report, file(params.kraken2_db, checkIfExists: true))
+        KRAKEN2(nonhost, dbInput(params.kraken2_db))
+        BRACKEN(KRAKEN2.out.report, dbInput(params.kraken2_db))
         PARSE_KRAKEN(KRAKEN2.out.report.join(BRACKEN.out.bracken))
         KRONA(PARSE_KRAKEN.out.krona)
         tables_br = PARSE_KRAKEN.out.table.map { m, f -> [m.id, f] }
         tool_versions = tool_versions.mix(KRAKEN2.out.versions, BRACKEN.out.versions)
     }
     if (shotgun && params.sylph_db) {
-        SYLPH(nonhost, file(params.sylph_db, checkIfExists: true))
+        SYLPH(nonhost, dbInput(params.sylph_db))
         PARSE_SYLPH(SYLPH.out.profile, optFile(params.sylph_lineage_map))
         tables_sy = PARSE_SYLPH.out.table.map { m, f -> [m.id, f] }
         tool_versions = tool_versions.mix(SYLPH.out.versions)
     }
     if (s16) {
-        EMU(nonhost, file(params.emu_db, checkIfExists: true))
+        EMU(nonhost, dbInput(params.emu_db))
         PARSE_EMU(EMU.out.profile)
         tables_em = PARSE_EMU.out.table.map { m, f -> [m.id, f] }
         tool_versions = tool_versions.mix(EMU.out.versions)
@@ -209,12 +223,12 @@ workflow {
         // keyed copies for joins: [id, meta, contigs, info]
         def contigs_k = contigs.map { m, c, i -> [m.id, m, c, i] }
 
-        AMRFINDER(contigs, optFile(params.amrfinder_db))
+        AMRFINDER(contigs, dbInput(params.amrfinder_db))
         tool_versions = tool_versions.mix(AMRFINDER.out.versions)
 
         def plasmid_ch = Channel.empty()
         if (params.genomad_db) {
-            GENOMAD(contigs, file(params.genomad_db, checkIfExists: true))
+            GENOMAD(contigs, dbInput(params.genomad_db))
             plasmid_ch = GENOMAD.out.plasmids.map { m, f -> [m.id, f] }
             tool_versions = tool_versions.mix(GENOMAD.out.versions)
         }
@@ -232,12 +246,12 @@ workflow {
             bins_ch = SEMIBIN2.out.bins.map { m, d, t -> [m.id, d, t] }
             tool_versions = tool_versions.mix(SEMIBIN2.out.versions)
             if (params.checkm2_db) {
-                CHECKM2(SEMIBIN2.out.bins, file(params.checkm2_db, checkIfExists: true))
+                CHECKM2(SEMIBIN2.out.bins, dbInput(params.checkm2_db))
                 checkm_ch = CHECKM2.out.quality.map { m, f -> [m.id, f] }
                 tool_versions = tool_versions.mix(CHECKM2.out.versions)
             }
             if (params.gtdbtk_db) {
-                GTDBTK(SEMIBIN2.out.bins, file(params.gtdbtk_db, checkIfExists: true))
+                GTDBTK(SEMIBIN2.out.bins, dbInput(params.gtdbtk_db))
                 gtdb_ch = GTDBTK.out.summary.map { m, f -> [m.id, f] }
                 tool_versions = tool_versions.mix(GTDBTK.out.versions)
             }
@@ -255,7 +269,7 @@ workflow {
         // function
         if (params.eggnog_db && !params.skip_assembly) {
             PYRODIGAL(contigs)
-            EGGNOG(PYRODIGAL.out.proteins, file(params.eggnog_db, checkIfExists: true))
+            EGGNOG(PYRODIGAL.out.proteins, dbInput(params.eggnog_db))
             FUNCTION_SUMMARY(EGGNOG.out.annotations, optFile(params.functional_targets))
             tool_versions = tool_versions.mix(EGGNOG.out.versions)
             report_extra = report_extra.mix(FUNCTION_SUMMARY.out.targets.map { it[1] })

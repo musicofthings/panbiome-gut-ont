@@ -8,9 +8,11 @@ Databases live in S3 and tasks run on AWS Batch in `ap-south-1`. Nothing large i
 | --- | --- |
 | `infra/aws/batch.yaml` | CloudFormation stack: private encrypted S3 bucket (`work/` expires after 14 days), ECR repository for the core image, IAM roles, and three job queues. |
 | `infra/aws/run.sh` | Launches any of the workflows with the stack's bucket, job role and ECR image. |
+| `infra/aws/web.yaml`, `infra/aws/deploy_web.sh` | Separate stack for the run monitor: Cognito sign-in, the API on Lambda, the site on S3 + CloudFront ([MONITOR.md](MONITOR.md)). |
 | `infra/aws/fetch_dbs.nf` | Downloads sylph r226 + lineage map, CheckM2, geNomad, AMRFinderPlus, eggNOG 5.0.2 and the T2T-CHM13 minimap2 index into `s3://BUCKET/db/`. |
 | `infra/aws/build_kraken2.nf` | Builds the 64 GB GTDB r226 Kraken2 + Bracken database into `s3://BUCKET/db/k2_gtdb_r226_64GB`. |
-| `infra/aws/fetch_test_reads.nf` | Writes the first ~3 Gb of public ENA run ERR2906227 (ZymoBIOMICS mock, ONT) and a one-row sample sheet to `s3://BUCKET/test_data/zymo/`. |
+| `infra/aws/kraken2_check.nf` | Classifies one read file against a Kraken2 database at several `--confidence` values (`--confidences 0,0.05`) and writes the reports and `kraken2-inspect`'s header to `results/<run>/`. |
+| `infra/aws/fetch_test_reads.nf` | Writes the first ~3 Gb of a public ONT run and a one-row sample sheet to `--reads_dir`. `--dataset fecal` (default): ZymoBIOMICS Fecal Reference D6323 from EPI2ME `zymo_fecal_2025.05` (flow cell PAU85136, R10.4.1, SUP 5.0.0), read from the unaligned BAM in `s3://ont-open-data`. `--dataset mock`: ZymoBIOMICS mock run ERR2906227 (R9.4.1) from NCBI's SRA bucket, because ENA was too slow. |
 
 | Queue | Machines | Used by |
 | --- | --- | --- |
@@ -40,7 +42,8 @@ The account's running on-demand vCPU quota was 32 (checked 2026-10-30), shared b
 ## Commands
 
 ```bash
-# Deploy or update the stack (Mumbai default VPC)
+# Deploy or update the stack (Mumbai default VPC). Update only when no run is active: a launch template change
+# rolls the task machines, and a run whose machines are replaced cannot be resumed.
 aws cloudformation deploy --profile programmable-bio --region ap-south-1 \
   --stack-name panbiome-gut-ont-batch --template-file infra/aws/batch.yaml --capabilities CAPABILITY_IAM \
   --parameter-overrides VpcId=VPC_ID SubnetIds=SUBNET_A,SUBNET_B,SUBNET_C
@@ -60,18 +63,54 @@ PANBIOME_REMOTE=1 PANBIOME_SCRIPT=infra/aws/fetch_dbs.nf infra/aws/run.sh fetch-
 PANBIOME_REMOTE=1 PANBIOME_SCRIPT=infra/aws/build_kraken2.nf infra/aws/run.sh build-kraken2 --db_dir s3://BUCKET/db
 ```
 
+## Watching a run
+
+The run monitor ([MONITOR.md](MONITOR.md)) shows the same information in a browser. From a terminal, with `export AWS_PROFILE=programmable-bio AWS_REGION=ap-south-1`:
+
+```bash
+# Status of a head job (run.sh prints its ID when it submits)
+aws batch describe-jobs --jobs HEAD_JOB_ID --query 'jobs[].[jobName,status,statusReason]' --output table
+
+# Follow the Nextflow log of a head job
+aws logs tail /aws/batch/job --follow --log-stream-names "$(aws batch describe-jobs --jobs HEAD_JOB_ID --query 'jobs[0].container.logStreamName' --output text)"
+
+# Tasks queued, starting or running in all queues
+for q in panbiome-default panbiome-ondemand panbiome-build; do for s in RUNNABLE STARTING RUNNING; do aws batch list-jobs --job-queue $q --job-status $s --query 'jobSummaryList[].[jobName,status]' --output text; done; done
+
+# Per-task time and peak memory once the run has ended
+aws s3 cp s3://BUCKET/results/RUN/execution/trace.txt - | column -t -s $'\t'
+```
+
+A task's `.command.log` and `.command.err` reach its S3 work directory only when the task ends.
+
+## Databases, caching and transfers
+
+For `main.nf`, `run.sh` presets every database under `s3://BUCKET/db/` ([infra/aws/databases.config](../infra/aws/databases.config)), with `--kraken2_confidence 0.005` for the 64 GB Kraken2 build. A run needs only `--fastq` and `--sample_sheet`; any `--param` on the command line overrides the preset, and `PANBIOME_DB_PRESET=0` turns it off.
+
+The `awsbatch` profile sets `--db_cache true`. Each task machine then keeps one copy of every database it has used in `/mnt/dbcache` on its own disk ([bin/dbcache](../bin/dbcache)). The first task that needs a database downloads it (64 parallel 64 MB parts); tasks that start meanwhile wait for that download, and later tasks on the same machine use the copy without any transfer. Without the cache, every Kraken2, eggNOG, CheckM2, geNomad, sylph, AMRFinderPlus and host-depletion task copied its database from S3 again. Nextflow copies other task inputs and outputs 16 at a time (`aws.batch.maxParallelTransfers`).
+
+Tool images from quay.io are pulled through an ECR pull-through cache (`QuayPullThroughCache` in `batch.yaml`): the first pull copies an image into ECR in `ap-south-1`, later machines pull it from there. `run.sh` switches the `container_*` parameters to `ACCOUNT.dkr.ecr.ap-south-1.amazonaws.com/quay/...` only once the rule exists.
+
+## Resuming a run
+
+Remote runs keep Nextflow's task cache in `s3://BUCKET/cache/<session-id>/` while they run (Nextflow's cloud cache, `NXF_CLOUDCACHE_PATH`), and `run.sh` saves the session id to `s3://BUCKET/launch/<run-name>/session-id`. To rerun a failed or cancelled run and reuse every task that succeeded, launch it again with the same run name plus `PANBIOME_RESUME=1`:
+
+```bash
+PANBIOME_REMOTE=1 PANBIOME_RESUME=1 infra/aws/run.sh zymo-fecal1 <same arguments as before>
+```
+
+Because the cache is written as tasks finish, this works even when the head machine was terminated mid-run. The head job itself is submitted with a retry: if its machine goes away (`Host EC2 ... terminated`), Batch starts it once more and it resumes on its own. A run that fails for any other reason is not retried. Task work directories expire with `work/` after 14 days, so resume only works within that window.
+
+Runs launched on 2026-10-31 before the cloud cache saved their cache to `s3://BUCKET/launch/<run-name>/.nextflow/` when they ended; `PANBIOME_RESUME=1` still resumes those. Earlier runs cannot be resumed.
+
 ## Chaining runs
 
 `PANBIOME_AFTER="JOB_ID [JOB_ID...]"` submits the head job held in `PENDING` until those Batch jobs succeed. If any of them fails, Batch fails the held job too, so nothing starts on a broken database. No machine runs while a job waits, and nothing polls.
 
 ```bash
-# First real-data run, started automatically after the Kraken2 build and the test reads (submitted 2026-10-30)
-PANBIOME_REMOTE=1 PANBIOME_AFTER="BUILD_HEAD_JOB_ID FETCH_HEAD_JOB_ID" infra/aws/run.sh zymo-aws1 \
-  --fastq s3://BUCKET/test_data/zymo/fastq_pass --sample_sheet s3://BUCKET/test_data/zymo/sample_sheet.csv \
-  --host_ref s3://BUCKET/db/host/chm13v2.0.map-ont.mmi --kraken2_db s3://BUCKET/db/k2_gtdb_r226_64GB \
-  --sylph_db s3://BUCKET/db/sylph/gtdb-r226-c200-dbv2.syl2db --sylph_lineage_map s3://BUCKET/db/sylph/gtdb_r226_map.tsv \
-  --checkm2_db s3://BUCKET/db/checkm2/CheckM2_database/uniref100.KO.1.dmnd --amrfinder_db s3://BUCKET/db/amrfinder/latest \
-  --genomad_db s3://BUCKET/db/genomad/genomad_db --eggnog_db s3://BUCKET/db/eggnog
+# Fecal reference run, started automatically once its reads have been fetched
+PANBIOME_REMOTE=1 PANBIOME_AFTER="FETCH_HEAD_JOB_ID" infra/aws/run.sh zymo-fecal1 \
+  --fastq s3://BUCKET/test_data/zymo_fecal/fastq_pass --sample_sheet s3://BUCKET/test_data/zymo_fecal/sample_sheet.csv
 ```
 
 Results go to `s3://BUCKET/results/<run-name>/` and the work directory to `s3://BUCKET/work/<run-name>/`. Deleting the stack keeps the bucket.

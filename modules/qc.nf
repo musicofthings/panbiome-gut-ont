@@ -38,8 +38,8 @@ process FILTER_READS {
     script:
     def maxl = params.max_len ? "--maxlength ${params.max_len}" : ''
     """
-    zcat ${fastq} | chopper --quality ${params.min_q} --minlength ${params.min_len} ${maxl} \\
-        --threads ${task.cpus} | gzip -c > ${meta.id}.filtered.fastq.gz
+    bgzip -dc -@ ${task.cpus} ${fastq} | chopper --quality ${params.min_q} --minlength ${params.min_len} ${maxl} \\
+        --threads ${task.cpus} | bgzip -@ ${task.cpus} -l 1 -c > ${meta.id}.filtered.fastq.gz
     echo "chopper \$(chopper --version 2>&1 | head -1)" > ${meta.id}.FILTER_READS.versions.txt
     """
 
@@ -60,7 +60,7 @@ process HOST_DEPLETION {
 
     input:
     tuple val(meta), path(fastq), path(header)
-    path host_ref
+    tuple path(host_ref), val(host_ref_uri)
     path pgx_bed
 
     output:
@@ -69,11 +69,18 @@ process HOST_DEPLETION {
     path "${meta.id}.HOST_DEPLETION.versions.txt",        emit: versions
 
     script:
+    def host_ref_path = host_ref_uri ? '"$(dbcache ' + host_ref_uri + ')"' : host_ref
     def bed = pgx_bed.name != 'NO_FILE' ? "--pgx_bed ${pgx_bed}" : ''
     """
-    minimap2 -ax map-ont -t ${task.cpus} --secondary=no ${host_ref} ${fastq} \\
-      | host_split.py --nonhost ${meta.id}.nonhost.fastq.gz --stats ${meta.id}.host.json \\
-            --sample ${meta.id} --min_aligned_frac ${params.host_min_aligned_frac} ${bed}
+    HOST_REF=${host_ref_path}
+    # PAF with -c keeps base-level alignment but writes no read sequences; host_split.py then makes one
+    # pass over the reads. Writing and parsing full SAM took 44 min for 3 Gb.
+    minimap2 -c -x map-ont -t ${task.cpus} --secondary=no \$HOST_REF ${fastq} > host.paf
+    bgzip -dc -@ ${task.cpus} ${fastq} \\
+      | host_split.py --paf host.paf --stats ${meta.id}.host.json \\
+            --sample ${meta.id} --min_aligned_frac ${params.host_min_aligned_frac} ${bed} \\
+      | bgzip -@ ${task.cpus} -l 1 -c > ${meta.id}.nonhost.fastq.gz
+    rm host.paf
     echo "minimap2 \$(minimap2 --version)" > ${meta.id}.HOST_DEPLETION.versions.txt
     """
 

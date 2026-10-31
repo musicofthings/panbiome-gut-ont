@@ -16,9 +16,11 @@ process FLYE {
     path "${meta.id}.FLYE.versions.txt", emit: versions
 
     script:
+    // Medaka polishes the assembly next, so Flye's own polishing pass is skipped (Flye docs: --iterations 0)
+    def polish = params.skip_polish ? '' : '--iterations 0'
     """
     set +e
-    flye --nano-hq ${reads} --meta --threads ${task.cpus} --out-dir flye_out ${params.flye_args}
+    flye --nano-hq ${reads} --meta --threads ${task.cpus} --out-dir flye_out ${polish} ${params.flye_args}
     rc=\$?
     set -e
     if [ \$rc -ne 0 ] || [ ! -s flye_out/assembly.fasta ]; then
@@ -214,17 +216,19 @@ process CHECKM2 {
 
     input:
     tuple val(meta), path(bins), path(contig_bins)
-    path db
+    tuple path(db), val(db_uri)
 
     output:
     tuple val(meta), path("${meta.id}.checkm2_quality.tsv"), emit: quality
     path "${meta.id}.CHECKM2.versions.txt", emit: versions
 
     script:
+    def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
     """
+    DB=${db_path}
     if ls ${bins}/*.fa >/dev/null 2>&1; then
         checkm2 predict --threads ${task.cpus} --input ${bins} --output-directory checkm2_out \\
-            -x fa --database_path ${db} --force
+            -x fa --database_path \$DB --force
         cp checkm2_out/quality_report.tsv ${meta.id}.checkm2_quality.tsv
     else
         printf 'Name\\tCompleteness\\tContamination\\n' > ${meta.id}.checkm2_quality.tsv
@@ -247,15 +251,17 @@ process GTDBTK {
 
     input:
     tuple val(meta), path(bins), path(contig_bins)
-    path db
+    tuple path(db), val(db_uri)
 
     output:
     tuple val(meta), path("${meta.id}.gtdbtk.summary.tsv"), emit: summary
     path "${meta.id}.GTDBTK.versions.txt", emit: versions
 
     script:
+    def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
     """
-    export GTDBTK_DATA_PATH=\$(readlink -f ${db})
+    DB=${db_path}
+    export GTDBTK_DATA_PATH=\$(readlink -f \$DB)
     printf 'user_genome\\tclassification\\n' > ${meta.id}.gtdbtk.summary.tsv
     if ls ${bins}/*.fa >/dev/null 2>&1; then
         gtdbtk classify_wf --genome_dir ${bins} --out_dir gtdbtk_out --extension fa \\
@@ -282,15 +288,17 @@ process AMRFINDER {
 
     input:
     tuple val(meta), path(contigs), path(info)
-    path db
+    tuple path(db), val(db_uri)
 
     output:
     tuple val(meta), path("${meta.id}.amrfinder.tsv"), emit: amr
     path "${meta.id}.AMRFINDER.versions.txt", emit: versions
 
     script:
-    def d = db.name != 'NO_FILE' ? "--database ${db}" : ''
+    def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
+    def d = (db_uri || db.name != 'NO_DB') ? "--database \$DB" : ''
     """
+    DB=${db_path}
     if [ -s ${contigs} ]; then
         amrfinder --nucleotide ${contigs} --plus --threads ${task.cpus} ${d} -o ${meta.id}.amrfinder.tsv
     else
@@ -314,17 +322,19 @@ process GENOMAD {
 
     input:
     tuple val(meta), path(contigs), path(info)
-    path db
+    tuple path(db), val(db_uri)
 
     output:
     tuple val(meta), path("${meta.id}.plasmid_summary.tsv"), emit: plasmids
     path "${meta.id}.GENOMAD.versions.txt", emit: versions
 
     script:
+    def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
     """
+    DB=${db_path}
     printf 'seq_name\\tlength\\ttopology\\tplasmid_score\\n' > ${meta.id}.plasmid_summary.tsv
     if [ -s ${contigs} ]; then
-        genomad end-to-end --cleanup --threads ${task.cpus} ${contigs} genomad_out ${db}
+        genomad end-to-end --cleanup --threads ${task.cpus} ${contigs} genomad_out \$DB
         f=\$(find genomad_out -name '*_plasmid_summary.tsv' | head -1)
         [ -n "\$f" ] && cp "\$f" ${meta.id}.plasmid_summary.tsv
     fi
@@ -371,17 +381,20 @@ process EGGNOG {
 
     input:
     tuple val(meta), path(proteins), path(info)
-    path db
+    tuple path(db), val(db_uri)
 
     output:
     tuple val(meta), path("${meta.id}.emapper.annotations"), path(info), emit: annotations
     path "${meta.id}.EGGNOG.versions.txt", emit: versions
 
     script:
+    def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
     """
+    DB=${db_path}
     if [ -s ${proteins} ]; then
+        mkdir -p emapper_out
         emapper.py -i ${proteins} --itype proteins -o ${meta.id} --output_dir emapper_out \\
-            --data_dir ${db} --cpu ${task.cpus} --override
+            --data_dir \$DB --cpu ${task.cpus} --override
         cp emapper_out/${meta.id}.emapper.annotations ${meta.id}.emapper.annotations
     else
         printf '#query\\tKEGG_ko\\n' > ${meta.id}.emapper.annotations

@@ -17,7 +17,8 @@ Parameters:
     Description: A Nextflow head job that runs longer is stopped, so a hung run cannot keep machines up.
   RootVolumeGiB:
     Type: Number
-    Default: 300
+    Default: 500
+    Description: Task disk. About 130 GB of it holds the database cache (/mnt/dbcache), the rest task work files.
   BuildRootVolumeGiB:
     Type: Number
     Default: 1000
@@ -109,6 +110,23 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
         - !Ref BucketAccessPolicy
+      # The first pull of a quay.io image through the pull-through cache creates its ECR repository
+      Policies:
+        - PolicyName: quay-pull-through
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ecr:CreateRepository, ecr:BatchImportUpstreamImage]
+                Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/quay/*'
+
+  # Tool images from quay.io are pulled once into ECR in this region and served from there
+  # (infra/aws/run.sh points the container_* params at <account>.dkr.ecr.<region>.amazonaws.com/quay/...).
+  QuayPullThroughCache:
+    Type: AWS::ECR::PullThroughCacheRule
+    Properties:
+      EcrRepositoryPrefix: quay
+      UpstreamRegistryUrl: quay.io
 
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -229,6 +247,9 @@ Resources:
             Ebs:
               VolumeSize: !Ref RootVolumeGiB
               VolumeType: gp3
+              # Staging the 64 GB Kraken2 database saturated the default 125 MB/s and stalled other containers
+              Throughput: 1000
+              Iops: 16000
               Encrypted: true
               DeleteOnTermination: true
         UserData:
@@ -310,6 +331,19 @@ Resources:
             export MAMBA_ROOT_PREFIX=/opt/mamba
             micromamba create -y -p /opt/aws-cli --file /tmp/awscli.lock
             micromamba clean -a -y
+            # The ECS agent's 4-minute default failed tasks with DockerTimeoutError while the disk was busy
+            echo 'ECS_CONTAINER_CREATE_TIMEOUT=10m' >> /etc/ecs/ecs.config
+            # Database cache shared by the tasks on this machine (bin/dbcache, aws.batch.volumes)
+            mkdir -p /mnt/dbcache
+            chmod 1777 /mnt/dbcache
+            # bin/dbcache reads this: more and larger parallel parts than the CLI default (10 x 8 MB)
+            cat > /opt/aws-cli/s3.config <<'S3CONFIG'
+            [default]
+            s3 =
+              max_concurrent_requests = 64
+              multipart_chunksize = 64MB
+              max_queue_size = 10000
+            S3CONFIG
 
             --==PANBIOME==--
 
@@ -413,6 +447,12 @@ Resources:
   OnDemandComputeEnv:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
+      # Update in place: replacing the environment on 2026-10-31 terminated every running machine
+      ReplaceComputeEnvironment: false
+      # Running jobs get up to 6 hours to finish before an infrastructure update replaces their machine
+      UpdatePolicy:
+        TerminateJobsOnUpdate: false
+        JobExecutionTimeoutMinutes: 360
       Type: MANAGED
       State: ENABLED
       ComputeResources:
@@ -434,6 +474,7 @@ Resources:
   BuildComputeEnv:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
+      ReplaceComputeEnvironment: false
       Type: MANAGED
       State: ENABLED
       ComputeResources:
