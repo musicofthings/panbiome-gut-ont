@@ -38,7 +38,8 @@ if [[ "${PANBIOME_REMOTE:-0}" == 1 ]]; then
   staging=$(mktemp -d -t panbiome-launch)
   trap 'rm -r "$staging"' EXIT
   printf "aws.batch.jobRole = '%s'\n" "$job_role" > "$staging/aws-run.config"
-  aws s3 sync . "$launch/" --only-show-errors \
+  # The CLI checks symlinks even under excluded folders and fails on broken ones left in work/.
+  aws s3 sync . "$launch/" --only-show-errors --no-follow-symlinks \
     --exclude '.git/*' --exclude '.claude/*' --exclude 'work/*' --exclude '.nextflow*' \
     --exclude 'output/*' --exclude 'stub_output*' --exclude '*.DS_Store' --exclude 'api_docs.md'
   aws s3 cp "$staging/aws-run.config" "$launch/aws-run.config" --only-show-errors

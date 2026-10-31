@@ -1,13 +1,65 @@
 #!/usr/bin/env python3
 """head_fastq URL OUT MAX_BASES: stream a gzipped FASTQ from URL and write its first complete records,
-up to MAX_BASES bases, to OUT (gzipped). Stops reading once enough bases are written."""
+up to MAX_BASES bases, to OUT (gzipped). Stops reading once enough bases are written.
+A dropped connection resumes with an HTTP Range request. http.client reports a body cut short as a
+normal end of file, so the byte count is checked against Content-Length to tell the two apart."""
 import gzip
+import http.client
+import io
 import sys
+import time
+import urllib.error
 import urllib.request
+
+ATTEMPTS = 50
+
+
+class ResumingSource(io.RawIOBase):
+    def __init__(self, url):
+        self.url, self.pos, self.size, self.src, self.drops = url, 0, None, None, 0
+
+    def readable(self):
+        return True
+
+    def readinto(self, b):
+        while True:
+            try:
+                if self.src is None:
+                    headers = {"Range": f"bytes={self.pos}-"} if self.pos else {}
+                    self.src = urllib.request.urlopen(urllib.request.Request(self.url, headers=headers), timeout=120)
+                    if self.pos and self.src.status != 206:
+                        raise RuntimeError(f"{self.url} ignored the Range request (HTTP {self.src.status})")
+                    if self.size is None:
+                        self.size = int(self.src.headers["Content-Length"])
+                n = self.src.readinto(b)
+                if n or self.pos >= self.size:
+                    self.pos += n
+                    return n
+                err = EOFError(f"body ended at byte {self.pos} of {self.size}")
+            except urllib.error.HTTPError as e:
+                if e.code < 500:
+                    raise
+                err = e
+            except (OSError, http.client.HTTPException) as e:
+                err = e
+            self.drops += 1
+            if self.drops == ATTEMPTS:
+                raise err
+            print(f"head_fastq: connection dropped at byte {self.pos} ({err!r}), resuming", file=sys.stderr)
+            if self.src is not None:
+                self.src.close()
+                self.src = None
+            time.sleep(min(60, 5 * self.drops))
+
+    def close(self):
+        if self.src is not None:
+            self.src.close()
+        super().close()
+
 
 url, out, max_bases = sys.argv[1], sys.argv[2], int(sys.argv[3])
 reads = bases = 0
-with urllib.request.urlopen(url, timeout=120) as src, gzip.open(src) as fq, gzip.open(out, "wb", compresslevel=4) as dst:
+with ResumingSource(url) as src, gzip.open(src) as fq, gzip.open(out, "wb", compresslevel=4) as dst:
     while bases < max_bases:
         rec = [fq.readline() for _ in range(4)]
         if not rec[3]:

@@ -7,6 +7,7 @@
 - `infra/aws/batch.yaml`: CloudFormation stack in `ap-south-1` with a private encrypted S3 bucket, an ECR mirror of the core image, IAM roles, and on-demand AWS Batch queues that scale to zero. Head jobs stop after 72 hours.
 - `infra/aws/run.sh` launches any workflow on Batch. `PANBIOME_REMOTE=1` runs Nextflow itself as a Batch job.
 - `infra/aws/fetch_dbs.nf` downloads sylph r226, CheckM2, geNomad, AMRFinderPlus, eggNOG 5.0.2 and the T2T-CHM13 index to S3. `infra/aws/build_kraken2.nf` builds a 64 GB GTDB r226 Kraken2 + Bracken database. Downloads resume after dropped connections (`infra/aws/bin/fetch_url`).
+- `infra/aws/fetch_test_reads.nf` streams the first ~3 Gb of ENA ERR2906227 to S3. `infra/aws/bin/head_fastq` resumes with Range requests when ENA drops the connection, which had cut the stream short on all three attempts of the first `fetch-zymo` run.
 - New `awsbatch` profile in `nextflow.config`.
 
 ### Workflow
