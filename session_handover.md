@@ -1,8 +1,8 @@
 # Session Handover
-_Generated: 2026-10-30T18:10:48Z_
+_Generated: 2026-10-31T08:53:05Z_
 _Branch: main_
-_Trigger: session-end | Context at compact: unknown%_
-_Compact count this project: 1_
+_Trigger: auto | Context at compact: unknown%_
+_Compact count this project: 2_
 
 ---
 
@@ -16,18 +16,13 @@ Run panbiome-gut-ont on AWS Batch (ap-south-1), databases in S3
 ---
 
 ## ✅ Completed This Session
-- CloudFormation stack `panbiome-gut-ont-batch` deployed (user runs deploys; the auto-mode classifier blocks Claude from applying IaC). On-demand only since 2026-10-30 14:20 UTC: spot CE removed, `panbiome-default` and `panbiome-ondemand` share `OnDemandComputeEnv` (MinvCpus 0), `panbiome-build` on `BuildComputeEnv` (1000 GB disk). Head job definition rev 2 has a 72 h timeout (`HeadTimeoutSeconds`).
-- Core image mirrored to ECR (`panbiome-gut-ont-core:0.1.0`, same digest as GHCR).
-- AWS stub run `stub-test4` passed 48/48.
-- Databases in `s3://panbiome-gut-ont-905663668881-ap-south-1/db/` (~79 GB): sylph r226 + map, CheckM2, geNomad, AMRFinderPlus (`amrfinder/latest`), eggNOG 5.0.2, T2T-CHM13 minimap2 index.
-- README "Run it on AWS", `docs/AWS.md` (incl. "Chaining runs"), `docs/ROADMAP.md` (Phase A real run, Phase B web frontend, Phase C EPI2ME), CHANGELOG Unreleased.
-- Commits pushed to main: cc451c9, e90e98d.
+- [ ] (track completed items here)
 
 ---
 
 ## 🔄 In Progress (Exact Resume Point)
 **Branch:** `main`
-**Last commit:** `1a86a33 chore(context): sync from oncophenomics — panbiome-gut-ont AWS Phase A, zymo-aws1 queued [2026-10-30T16:21:15Z]`
+**Last commit:** `80e804c Resume the Zymo read stream when ENA drops the connection.`
 **Next immediate action:** aws sso login --profile programmable-bio, then check jobs build-kraken2b / fetch-zymo / zymo-aws1 and review results/zymo-aws1
 
 ---
@@ -54,12 +49,12 @@ Run panbiome-gut-ont on AWS Batch (ap-south-1), databases in S3
 **This exact conversation** (SDK/CLI transcript resume):
 ```bash
 # Same machine AND same directory it started in:
-claude --resume e4fe2a06-3447-4b6b-a744-2025724ed5df
+claude --resume b1dc8886-bfda-479f-8e87-4ba6cb4b398e
 ```
-- Session ID    : `e4fe2a06-3447-4b6b-a744-2025724ed5df`
-- Transcript    : `/Users/theranosis_dx/.claude/projects/-Users-theranosis-dx-projects-panbiome-gut-ont/e4fe2a06-3447-4b6b-a744-2025724ed5df.jsonl`
+- Session ID    : `b1dc8886-bfda-479f-8e87-4ba6cb4b398e`
+- Transcript    : `/Users/theranosis_dx/.claude/projects/-Users-theranosis-dx-projects-panbiome-gut-ont/b1dc8886-bfda-479f-8e87-4ba6cb4b398e.jsonl`
 - Bound to cwd  : `/Users/theranosis_dx/projects/panbiome-gut-ont`
-- Stored at     : `~/.claude/projects/-Users-theranosis-dx-projects-panbiome-gut-ont/e4fe2a06-3447-4b6b-a744-2025724ed5df.jsonl`
+- Stored at     : `~/.claude/projects/-Users-theranosis-dx-projects-panbiome-gut-ont/b1dc8886-bfda-479f-8e87-4ba6cb4b398e.jsonl`
 
 > ⚠️ Transcript resume is **cwd-bound**. It only works from the same directory
 > on the same machine. If this session started in a git **worktree**, that
@@ -84,36 +79,46 @@ bash scripts/session_sync.sh --load
 ## 📁 Files Modified This Session
 | File | Status |
 |------|--------|
+| `.claude/launch.json` | modified |
+| `CHANGELOG.md` | modified |
+| `README.md` | modified |
+| `api/panbiome_api/aws.py` | modified |
+| `api/panbiome_api/main.py` | modified |
+| `api/panbiome_api/pipeline.py` | modified |
+| `api/panbiome_api/settings.py` | modified |
+| `api/panbiome_api/tasks.py` | modified |
 | `docs/AWS.md` | modified |
 | `docs/DATABASES.md` | modified |
+| `docs/MONITOR.md` | modified |
 | `docs/ROADMAP.md` | modified |
 | `infra/aws/batch.yaml` | modified |
 | `infra/aws/bin/fetch_url` | modified |
 | `infra/aws/bin/head_fastq` | modified |
-| `infra/aws/build_kraken2.nf` | modified |
-| `infra/aws/fetch_dbs.nf` | modified |
-| `infra/aws/fetch_test_reads.nf` | modified |
-| `infra/aws/run.sh` | modified |
-| `modules/assembly.nf` | modified |
-| `nextflow.config` | modified |
-| `session_handover.md` | modified |
+| _(+16 more files not shown)_ | — |
 
 ---
 
 ## 🌿 Git Context
 ```
 Branch  : main
-Commit  : 1a86a33 chore(context): sync from oncophenomics — panbiome-gut-ont AWS Phase A, zymo-aws1 queued [2026-10-30T16:21:15Z]
-Status  : ?? api_docs.md
+Commit  : 80e804c Resume the Zymo read stream when ENA drops the connection.
+Status  : M CHANGELOG.md
+ M README.md
+ M docs/AWS.md
+ M docs/ROADMAP.md
+?? api/
+?? api_docs.md
+?? docs/MONITOR.md
+?? web/
 ```
 
 Recent commits:
 ```
+80e804c Resume the Zymo read stream when ENA drops the connection.
+7484464 chore(context): save session state — Run panbiome-gut-ont on AWS Batch (ap-south-1), databases in S3 [2026-10-30T18:10:47Z]
 1a86a33 chore(context): sync from oncophenomics — panbiome-gut-ont AWS Phase A, zymo-aws1 queued [2026-10-30T16:21:15Z]
 e90e98d Queue the first real-data AWS run behind the Kraken2 build.
 cc451c9 Run the workflow on AWS Batch with on-demand machines only.
-7c7f97b chore(context): pre-compact snapshot [2026-10-30T10:58:57Z] ctx=unknown%
-e2e1e5c chore(context): sync from oncophenomics.local — panbiome-gut-ont v0.1.1 publish [2026-10-27T21:16:33Z]
 ```
 
 ---
