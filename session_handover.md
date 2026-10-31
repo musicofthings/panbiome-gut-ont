@@ -1,8 +1,8 @@
 # Session Handover
-_Generated: 2026-10-31T08:53:05Z_
+_Generated: 2026-10-31T21:33:49Z_
 _Branch: main_
 _Trigger: auto | Context at compact: unknown%_
-_Compact count this project: 2_
+_Compact count this project: 3_
 
 ---
 
@@ -22,7 +22,7 @@ Run panbiome-gut-ont on AWS Batch (ap-south-1), databases in S3
 
 ## 🔄 In Progress (Exact Resume Point)
 **Branch:** `main`
-**Last commit:** `80e804c Resume the Zymo read stream when ENA drops the connection.`
+**Last commit:** `159bf12 Add the run monitor and make AWS runs faster, cached and resumable.`
 **Next immediate action:** aws sso login --profile programmable-bio, then check jobs build-kraken2b / fetch-zymo / zymo-aws1 and review results/zymo-aws1
 
 ---
@@ -81,12 +81,12 @@ bash scripts/session_sync.sh --load
 |------|--------|
 | `.claude/launch.json` | modified |
 | `CHANGELOG.md` | modified |
-| `README.md` | modified |
 | `api/panbiome_api/aws.py` | modified |
 | `api/panbiome_api/main.py` | modified |
 | `api/panbiome_api/pipeline.py` | modified |
 | `api/panbiome_api/settings.py` | modified |
 | `api/panbiome_api/tasks.py` | modified |
+| `bin/dbcache` | modified |
 | `docs/AWS.md` | modified |
 | `docs/DATABASES.md` | modified |
 | `docs/MONITOR.md` | modified |
@@ -94,31 +94,24 @@ bash scripts/session_sync.sh --load
 | `infra/aws/batch.yaml` | modified |
 | `infra/aws/bin/fetch_url` | modified |
 | `infra/aws/bin/head_fastq` | modified |
-| _(+16 more files not shown)_ | — |
+| _(+22 more files not shown)_ | — |
 
 ---
 
 ## 🌿 Git Context
 ```
 Branch  : main
-Commit  : 80e804c Resume the Zymo read stream when ENA drops the connection.
-Status  : M CHANGELOG.md
- M README.md
- M docs/AWS.md
- M docs/ROADMAP.md
-?? api/
-?? api_docs.md
-?? docs/MONITOR.md
-?? web/
+Commit  : 159bf12 Add the run monitor and make AWS runs faster, cached and resumable.
+Status  : ?? api_docs.md
 ```
 
 Recent commits:
 ```
+159bf12 Add the run monitor and make AWS runs faster, cached and resumable.
+2b56bb2 chore(context): pre-compact snapshot [2026-10-31T08:53:05Z] ctx=unknown%
 80e804c Resume the Zymo read stream when ENA drops the connection.
 7484464 chore(context): save session state — Run panbiome-gut-ont on AWS Batch (ap-south-1), databases in S3 [2026-10-30T18:10:47Z]
 1a86a33 chore(context): sync from oncophenomics — panbiome-gut-ont AWS Phase A, zymo-aws1 queued [2026-10-30T16:21:15Z]
-e90e98d Queue the first real-data AWS run behind the Kraken2 build.
-cc451c9 Run the workflow on AWS Batch with on-demand machines only.
 ```
 
 ---
