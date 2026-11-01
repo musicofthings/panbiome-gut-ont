@@ -64,6 +64,32 @@ On AWS:
 - The task cache is kept in S3 while a run goes, so `PANBIOME_RESUME=1 infra/aws/run.sh <run-name> ...` reuses every finished task, even after the head machine was lost. A head job whose machine is terminated is retried and resumes by itself.
 - Details are in [docs/AWS.md](docs/AWS.md) under "Databases, caching and transfers" and "Resuming a run".
 
+### Performance
+
+One ZymoBIOMICS Fecal Reference sample (first ~3 Gb of EPI2ME `zymo_fecal_2025.05`, R10.4.1 SUP), all 29 tasks, on AWS Batch:
+
+| Step | `zymo-fecal1` (2026-10-31) | `zymo-fecal2` (2026-11-01) | What changed |
+| --- | --- | --- | --- |
+| Whole run | 4 h 14 min | **3 h 13 min** | |
+| Ingest | 12 min 24 s | **48 s** | Reads are written with multithreaded `bgzip -l 1` instead of single-threaded `gzip -6`. |
+| Filter reads | 12 min 6 s | **12 s** | Same, around `chopper`. |
+| Host depletion | 43 min 39 s | **2 min 42 s** | `minimap2 -c` to PAF and one pass over the reads in `bin/host_split.py`, instead of parsing SAM in Python and writing gzip level 9. Same host rule. |
+| Flye | 73 min | **37 min** | `--iterations 0`: Flye skips its own polishing because Medaka polishes next. |
+| Medaka | 56 min | 70 min | Polishes a rougher, 3% larger draft. Uses under 3 of 8 cores; the next target. |
+| eggNOG | 40 min | 66 min | Being addressed below; `zymo-fecal3` measures it. |
+| Kraken2 | 1.5 min | 9.3 min | Includes the one-time 64 GB database download into the machine's cache (7 min 55 s). |
+
+Reads, filtered reads and host depletion were identical in both runs (469,645 reads after filtering, 301 host reads).
+
+Other changes for speed, cost and fault tolerance:
+
+- **Database cache per machine** (`/mnt/dbcache`, [bin/dbcache](bin/dbcache)): each database is downloaded once per machine and shared by every task on it, with a lock so tasks that start together wait for one download. Downloads use the AWS CLI's CRT transfer client: 69 s for the 64 GB Kraken2 database and 52 s for eggNOG in a test job, down from 475 s and 346 s.
+- **eggNOG**: the DIAMOND search and the annotation run as two timed steps, and on AWS `--eggnog_dbmem` loads the 38.5 GB annotation database into memory (56 GB task).
+- **Transfers and images**: 16 parallel S3 transfers per task instead of 4; tool images come from an ECR pull-through cache of quay.io inside the region.
+- **Disks**: 500 GB gp3 task disks at 1000 MB/s and 16,000 IOPS (the default 125 MB/s made containers time out while Kraken2's database was being copied); the ECS agent waits 10 minutes for a container to start.
+- **Fault tolerance**: tasks that run out of memory or whose container never starts are retried with more memory; the task cache is saved to S3 as the run goes, so `PANBIOME_RESUME=1` resumes a run even when its head machine was lost; the head job is retried once if its machine is terminated; stack updates wait for running jobs instead of replacing the compute environment.
+- **Cost**: on-demand machines only, scaled to zero between runs; no GPU or extra quota needed.
+
 To follow runs in a browser, use the run monitor ([docs/MONITOR.md](docs/MONITOR.md)). It shows each run's pipeline steps with live status from AWS Batch, plus task logs and reports. It runs locally, or on AWS (S3 + CloudFront, API on Lambda) behind an invite-only Cognito sign-in with MFA for lab staff; `infra/aws/deploy_web.sh` deploys it.
 
 Next phases (first real run on AWS, the rest of the web frontend, EPI2ME integration) are planned in [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -110,13 +136,14 @@ All thresholds are placeholders: QC limits, mock limits (`mock_max_bray`, `mock_
 
 | Part | Status |
 | --- | --- |
-| Python helpers (`bin/`) | Passed. `python3 -m pytest tests -q` on 2026-10-31: 8 passed. Synthetic unit tests. `host_split.py` now reads minimap2 PAF; on 400 simulated reads it kept the same reads with identical sequences as the SAM version. |
-| Parameter schema vs `nextflow.config` | Passed. `scripts/make_schema.py` re-run on 2026-10-31 for `db_cache`. The same pytest checks every `params` key and default. |
-| Nextflow DAG, channel wiring, `-stub-run` | Passed on the synthetic sheet in `test_data/` (P001, P002, BLANK1). `bash tests/stub_run.sh` after the stub fix: 48 tasks and one sample report each. Also passed: `--assay 16s`, `--assay both`, `--skip_assembly`, `--skip_host_depletion`, `--control_summary`. Re-run on 2026-10-31 with Nextflow 26.10.4 after the database-cache and host-depletion changes: 48 of 48 tasks, and 64 of 64 with `--db_cache true` and all S3 database paths. |
+| Python helpers (`bin/`) | Passed. `python3 -m pytest tests -q` on 2026-11-01: 8 passed. Synthetic unit tests. `host_split.py` now reads minimap2 PAF; on 400 simulated reads it kept the same reads with identical sequences as the SAM version. |
+| Parameter schema vs `nextflow.config` | Passed. `scripts/make_schema.py` re-run on 2026-11-01 for `eggnog_dbmem` (83 parameters). The same pytest checks every `params` key and default. |
+| Nextflow DAG, channel wiring, `-stub-run` | Passed on the synthetic sheet in `test_data/` (P001, P002, BLANK1). `bash tests/stub_run.sh` after the stub fix: 48 tasks and one sample report each. Also passed: `--assay 16s`, `--assay both`, `--skip_assembly`, `--skip_host_depletion`, `--control_summary`. Re-run on 2026-10-31 with Nextflow 26.10.4 after the database-cache and host-depletion changes: 48 of 48 tasks, and 64 of 64 with `--db_cache true` and all S3 database paths. Re-run on 2026-11-01 with `--eggnog_dbmem true`: passed. The two-step eggNOG script was also run for real against a stand-in `emapper.py` to check the calls and the file passed between them. |
 | Kraken2, Bracken, sylph, host depletion, QC, reconcile, HTML report | Passed on small data. First 209715200 bytes of ENA ERR2906227 (repaired to 52677 reads, 208636938 bases). Kraken2, Bracken, and sylph used the same ten RefSeq genomes. Host decoy: Enterobacteria phage lambda NC_001416.1. Run 1 used `--skip_binning --skip_assembly` and exited 0. Eight species were kept where both methods agreed. |
 | Flye and Medaka | Passed on small data. Same reads and databases, run 3. Flye: 467 contigs, 7928514 bp, N50 20795. Medaka: 467 contigs, 7858240 bp, N50 20573, model file `r1041_e82_400bps_sup_v5.0.0_model_pt.tar.gz`. |
 | SemiBin2, geNomad, AMRFinderPlus | Passed on AWS on 2026-10-31 (`zymo-aws1`, first ~3 Gb of the ZymoBIOMICS mock ERR2906227): 9 SemiBin2 bins, AMRFinderPlus and geNomad completed with the S3 databases. |
-| CheckM2, eggNOG | Failed in `zymo-aws1`: CheckM2's container did not start within 4 minutes while Kraken2 staged its database (fixed with faster disks and a 10-minute limit), and eggNOG-mapper rejected a missing output folder (fixed). Not rerun yet. |
+| CheckM2, eggNOG | Passed on AWS in `zymo-fecal1` and `zymo-fecal2` after the fixes for `zymo-aws1` (CheckM2's container timed out while Kraken2 staged its database; eggNOG-mapper rejected a missing output folder). |
+| Whole pipeline on real data | Passed on AWS. `zymo-fecal1` (2026-10-31): 29 of 29 tasks, 172 bins (9 high quality, 43 at least medium), 273 species by both methods at Kraken2 confidence 0.05. `zymo-fecal2` (2026-11-01, faster code, confidence 0.005): 29 of 29 tasks with no retries, 173 bins (8 high quality, 45 at least medium), 316 species by both methods, 50 AMRFinderPlus hits, 4,134 KEGG orthologs. Database cache, ECR images and the S3 task cache worked. `zymo-fecal3` (CRT downloads, eggNOG `--dbmem`) is running. Step times are under "Performance". |
 | GTDB-Tk, Emu | Not run on real data. |
 | Container tags | Passed as a resolution check on 2026-10-28. `nextflow inspect -profile standard` mapped each included process to the tag in `nextflow.config`. Core image `ghcr.io/musicofthings/panbiome-gut-ont-core:0.1.0` is on GHCR (private) and mirrored to ECR in `ap-south-1` with the same digest. |
 | AWS Batch | Stub run passed on 2026-10-30: `stub-test4`, 48 of 48 tasks, report written to S3. Database downloads (sylph r226, CheckM2, geNomad, AMRFinderPlus, eggNOG 5.0.2, T2T-CHM13 index) and the 64 GB Kraken2 build finished. Real data from 2026-10-31: see the rows above. Kraken2 with the 64 GB build classified 96% of mock reads at confidence 0 (the eight mock bacteria on top) and 0.14% at 0.05. |
@@ -130,7 +157,7 @@ Assumptions checked in those runs:
 - `bracken_read_len` is still 1000. The tiny database was built with `bracken-build -l 1000`. The Langmead GTDB v226 archive ships Bracken lengths through 300-mers, so a full database still needs that 1000-mer build.
 - The small run gave Kraken2 and sylph one shared taxonomy (those ten RefSeq genomes). The full-size pair in [docs/DATABASES.md](docs/DATABASES.md) is GTDB r226 for both. GTDB-Tk 2.8.0 takes reference package R232.
 - SemiBin2 `--environment human_gut` and `--sequencing-type long_read` are listed values in the 2.6.0 help. Binning was not run. With `--reference-db` unset, `single_easy_bin` downloads GTDB.
-- eggNOG-mapper is called with `--data_dir` only. In the pinned 2.1.15 help, `--dmnd_db` is optional when the DIAMOND file sits in that directory. The process was not run on a real database. The image download host `eggnogdb.embl.de` did not resolve. The eggNOG 5.0.2 files are on `https://eggnog5.embl.de/download/emapperdb-5.0.2/`.
+- eggNOG-mapper is called with `--data_dir` only. In the pinned 2.1.15 help, `--dmnd_db` is optional when the DIAMOND file sits in that directory. It ran on the real eggNOG 5.0.2 database in `zymo-fecal1` and `zymo-fecal2`. The image download host `eggnogdb.embl.de` did not resolve. The eggNOG 5.0.2 files are on `https://eggnog5.embl.de/download/emapperdb-5.0.2/`.
 
 Placeholder thresholds (QC, mock Bray-Curtis, AMR, watchlist) were not changed.
 

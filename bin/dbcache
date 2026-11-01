@@ -8,8 +8,6 @@ set -euo pipefail
 uri=${1%/}
 root=${PANBIOME_DB_CACHE:-/mnt/dbcache}
 aws=${PANBIOME_AWS_CLI:-/opt/aws-cli/bin/aws}
-# Written by the launch template: more parallel parts per transfer than the CLI's default
-[ -f /opt/aws-cli/s3.config ] && export AWS_CONFIG_FILE=/opt/aws-cli/s3.config
 
 dest=$root/${uri#s3://}
 lock=$dest.lock
@@ -30,6 +28,12 @@ if [ ! -e "$dest.complete" ]; then
   done
   if [ "$owner" = 1 ] && [ ! -e "$dest.complete" ]; then
     rm -rf "$dest" "$dest.part"
+    # The CLI's C-based (CRT) transfer client: the default Python one reached about 140 MB/s. CRT sizes its
+    # buffers from target_bandwidth, so cap them to stay inside the task's memory limit.
+    export AWS_CONFIG_FILE=$dest.awsconfig
+    printf '[default]\ns3 =\n  preferred_transfer_client = crt\n  target_bandwidth = %s\n' \
+      "${PANBIOME_S3_BANDWIDTH:-8Gb/s}" > "$AWS_CONFIG_FILE"
+    export AWS_CRT_S3_MEMORY_LIMIT_IN_GIB=${AWS_CRT_S3_MEMORY_LIMIT_IN_GIB:-2}
     start=$(date +%s)
     if [ -n "$("$aws" s3 ls "$uri/" 2>/dev/null | head -1)" ]; then
       "$aws" s3 sync "$uri/" "$dest.part/" --only-show-errors
@@ -37,8 +41,10 @@ if [ ! -e "$dest.complete" ]; then
       "$aws" s3 cp "$uri" "$dest.part" --only-show-errors
     fi
     mv "$dest.part" "$dest"
+    rm -f "$AWS_CONFIG_FILE"
     touch "$dest.complete"
-    echo "dbcache: downloaded $uri in $(( $(date +%s) - start ))s" >&2
+    secs=$(( $(date +%s) - start ))
+    echo "dbcache: downloaded $uri ($(du -sm "$dest" | cut -f1) MB) in ${secs}s" >&2
   fi
 fi
 touch "$dest.complete"  # last use, for clearing old entries by hand

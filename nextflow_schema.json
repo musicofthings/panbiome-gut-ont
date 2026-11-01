@@ -339,6 +339,11 @@
           "description": "eggNOG-mapper data folder (enables functional profiling).",
           "format": "directory-path"
         },
+        "eggnog_dbmem": {
+          "type": "boolean",
+          "description": "Load eggnog.db into memory for the annotation step (--dbmem). Needs about 44 GB; on in the awsbatch profile.",
+          "default": false
+        },
         "db_cache": {
           "type": "boolean",
           "description": "AWS Batch only: copy s3:// databases once per machine into /mnt/dbcache and reuse them, instead of staging a copy into every task.",

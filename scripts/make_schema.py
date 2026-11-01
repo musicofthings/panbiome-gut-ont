@@ -104,6 +104,7 @@ groups = {
         "amr_min_id": p(N, "Minimum % identity to the reference gene to report.", default=90, minimum=0),
         "genomad_db": p(S, "geNomad database folder (enables plasmid calls).", fmt="directory-path"),
         "eggnog_db": p(S, "eggNOG-mapper data folder (enables functional profiling).", fmt="directory-path"),
+        "eggnog_dbmem": p(B, "Load eggnog.db into memory for the annotation step (--dbmem). Needs about 44 GB; on in the awsbatch profile.", default=False),
         "db_cache": p(B, "AWS Batch only: copy s3:// databases once per machine into /mnt/dbcache and reuse them, instead of staging a copy into every task.", default=False),
         "functional_targets": p(S, "TSV of targeted gut functions (function, gene, ko).", fmt="file-path",
                                 help_="Defaults to assets/functional_targets.tsv. The starter set must be curated before clinical use."),

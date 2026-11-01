@@ -389,12 +389,20 @@ process EGGNOG {
 
     script:
     def db_path = db_uri ? '"$(dbcache ' + db_uri + ')"' : db
+    // --dbmem loads the 38.5 GB eggnog.db into memory for the annotation step (needs ~44 GB)
+    def dbmem = params.eggnog_dbmem ? '--dbmem' : ''
     """
     DB=${db_path}
     if [ -s ${proteins} ]; then
         mkdir -p emapper_out
-        emapper.py -i ${proteins} --itype proteins -o ${meta.id} --output_dir emapper_out \\
-            --data_dir \$DB --cpu ${task.cpus} --override
+        # Search and annotation run separately so the log shows how long each takes
+        start=\$(date +%s)
+        emapper.py -m diamond --no_annot -i ${proteins} --itype proteins -o ${meta.id}.search \\
+            --output_dir emapper_out --data_dir \$DB --cpu ${task.cpus} --override
+        searched=\$(date +%s)
+        emapper.py -m no_search --annotate_hits_table emapper_out/${meta.id}.search.emapper.seed_orthologs \\
+            -o ${meta.id} --output_dir emapper_out --data_dir \$DB --cpu ${task.cpus} --override ${dbmem}
+        echo "eggnog: search \$(( searched - start ))s, annotation \$(( \$(date +%s) - searched ))s" >&2
         cp emapper_out/${meta.id}.emapper.annotations ${meta.id}.emapper.annotations
     else
         printf '#query\\tKEGG_ko\\n' > ${meta.id}.emapper.annotations

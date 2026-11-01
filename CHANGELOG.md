@@ -27,6 +27,8 @@
 - Reads are recompressed with `bgzip -@ <cpus> -l 1` instead of single-threaded `gzip -6` in `INGEST` and `FILTER_READS`, and decompressed with threads.
 - `HOST_DEPLETION` runs `minimap2 -c` to PAF and `bin/host_split.py` makes one pass over the reads, instead of parsing full SAM in Python and writing gzip level 9 (44 min for 3 Gb). The host rule is unchanged: the PAF query span of a base-level alignment equals the CIGAR's M/I/=/X count. On 400 simulated reads (human, part-human, reverse strand, non-human) the old and new versions kept the same reads with identical sequences.
 - `FLYE` runs with `--iterations 0` when Medaka polishes afterwards (Flye docs: 0 skips Flye's own polishing).
+- `bin/dbcache` downloads with the AWS CLI's CRT transfer client (`preferred_transfer_client = crt`, `target_bandwidth` 8 Gb/s, buffers capped at 2 GiB). In `zymo-fecal2` the default client fetched the 64 GB Kraken2 database in 475 s and eggNOG in 346 s, about 140 MB/s. With CRT, a test job in an 8 GB container fetched them in 69 s (66.6 GB) and 52 s (48.6 GB), close to the disk's 1000 MB/s. The S3 settings file in the launch template is no longer used and was removed.
+- `EGGNOG` runs the DIAMOND search and the annotation as two `emapper.py` calls and logs each one's time. New `--eggnog_dbmem` (on in the `awsbatch` profile, with 56 GB for the task) loads the 38.5 GB `eggnog.db` into memory for the annotation (`--dbmem`, about 44 GB). Same search settings, so the same annotations.
 
 ### Workflow
 

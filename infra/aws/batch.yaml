@@ -336,14 +336,6 @@ Resources:
             # Database cache shared by the tasks on this machine (bin/dbcache, aws.batch.volumes)
             mkdir -p /mnt/dbcache
             chmod 1777 /mnt/dbcache
-            # bin/dbcache reads this: more and larger parallel parts than the CLI default (10 x 8 MB)
-            cat > /opt/aws-cli/s3.config <<'S3CONFIG'
-            [default]
-            s3 =
-              max_concurrent_requests = 64
-              multipart_chunksize = 64MB
-              max_queue_size = 10000
-            S3CONFIG
 
             --==PANBIOME==--
 
