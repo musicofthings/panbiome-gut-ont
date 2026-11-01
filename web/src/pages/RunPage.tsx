@@ -59,6 +59,11 @@ export function RunPage() {
           {d?.reason && d.status === 'failed' && <p className="error small">{d.reason}</p>}
         </div>
         <div className="head-actions">
+          {d?.kind === 'pipeline' && (
+            <Link to={`/runs/${encodeURIComponent(run)}/report`} className="button primary">
+              View report
+            </Link>
+          )}
           {detail.updated && (
             <span className="muted small">
               {d && SOURCE[d.source]} · updated {detail.updated.toLocaleTimeString()}

@@ -67,15 +67,123 @@ export interface HeadLog {
   note: string | null
 }
 
-export async function getJson<T>(path: string): Promise<T> {
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+export async function sendJson<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const token = await accessToken()
-  const res = await fetch(path, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
+  const headers: Record<string, string> = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
   if (res.status === 401 && token) return signIn()
   if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new Error(body?.detail ? String(body.detail) : `${res.status} ${res.statusText}`)
+    const err = await res.json().catch(() => null)
+    throw new ApiError(res.status, err?.detail ? String(err.detail) : `${res.status} ${res.statusText}`)
   }
   return res.json() as Promise<T>
+}
+
+export function getJson<T>(path: string): Promise<T> {
+  return sendJson<T>('GET', path)
+}
+
+export function query(params: Record<string, string | boolean | undefined>): string {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v))
+  return q.toString()
+}
+
+// ---- files
+
+export interface FileRoot {
+  name: string
+  label: string
+  writable: boolean
+}
+
+export interface FileEntry {
+  name: string
+  size: number
+  modified: string
+}
+
+export interface Listing {
+  root: string
+  path: string
+  writable: boolean
+  folders: string[]
+  files: FileEntry[]
+  next_token: string | null
+}
+
+// ---- report
+
+export type Row = Record<string, string | number | boolean | null>
+export interface Table {
+  rows: Row[]
+  total: number
+}
+
+export interface ReadStats {
+  reads: number
+  bases: number
+  gb: number
+  n50: number
+  mean_len: number
+  median_len: number
+  mean_q: number
+  median_read_q: number
+  max_len: number
+  pct_q10: number
+  pct_q15: number
+  adapter_any_pct: number
+  length_hist: Record<string, number>
+  qual_hist: Record<string, number>
+}
+
+export interface RunSummaryReport {
+  summary: Record<string, unknown> | null
+  qc: Row[] | null
+  control: { status: string; reason: string | null; release_patient_results: boolean } | null
+  alpha: Row[] | null
+  samples: string[]
+}
+
+export interface SampleReport {
+  sample: string
+  raw: ReadStats | null
+  filtered: ReadStats | null
+  host: { host_fraction: number; host_reads: number; nonhost_reads: number; total_reads: number } | null
+  taxa_summary: { species_kept: number; species_total_candidates: number; both_methods_agree: number; rule: string } | null
+  species: { rows: Row[]; kept: number; candidates: number } | null
+  watchlist: Table | null
+  bins: Table | null
+  amr: Table | null
+  plasmids: Table | null
+  function_targets: Table | null
+  modules: Table | null
+}
+
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let v = n / 1024
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`
+}
+
+export function formatCount(n: number | null | undefined): string {
+  return n == null ? '–' : n.toLocaleString()
 }
 
 export const ACTIVE: RunStatus[] = ['waiting', 'starting', 'running']

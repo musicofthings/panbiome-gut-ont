@@ -68,18 +68,18 @@ On AWS:
 
 One ZymoBIOMICS Fecal Reference sample (first ~3 Gb of EPI2ME `zymo_fecal_2025.05`, R10.4.1 SUP), all 29 tasks, on AWS Batch:
 
-| Step | `zymo-fecal1` (2026-10-31) | `zymo-fecal2` (2026-11-01) | What changed |
-| --- | --- | --- | --- |
-| Whole run | 4 h 14 min | **3 h 13 min** | |
-| Ingest | 12 min 24 s | **48 s** | Reads are written with multithreaded `bgzip -l 1` instead of single-threaded `gzip -6`. |
-| Filter reads | 12 min 6 s | **12 s** | Same, around `chopper`. |
-| Host depletion | 43 min 39 s | **2 min 42 s** | `minimap2 -c` to PAF and one pass over the reads in `bin/host_split.py`, instead of parsing SAM in Python and writing gzip level 9. Same host rule. |
-| Flye | 73 min | **37 min** | `--iterations 0`: Flye skips its own polishing because Medaka polishes next. |
-| Medaka | 56 min | 70 min | Polishes a rougher, 3% larger draft. Uses under 3 of 8 cores; the next target. |
-| eggNOG | 40 min | 66 min | Being addressed below; `zymo-fecal3` measures it. |
-| Kraken2 | 1.5 min | 9.3 min | Includes the one-time 64 GB database download into the machine's cache (7 min 55 s). |
+| Step | `zymo-fecal1` (2026-10-31) | `zymo-fecal2` (2026-11-01) | `zymo-fecal3` (2026-11-01) | What changed |
+| --- | --- | --- | --- | --- |
+| Whole run | 4 h 14 min | 3 h 13 min | **2 h 39 min** | |
+| Ingest | 12 min 24 s | **48 s** | 44 s | Reads are written with multithreaded `bgzip -l 1` instead of single-threaded `gzip -6`. |
+| Filter reads | 12 min 6 s | **12 s** | 14 s | Same, around `chopper`. |
+| Host depletion | 43 min 39 s | 2 min 42 s | **1 min 45 s** | `minimap2 -c` to PAF and one pass over the reads in `bin/host_split.py`, instead of parsing SAM in Python and writing gzip level 9. Same host rule. |
+| Flye | 73 min | 37 min | **33 min** | `--iterations 0`: Flye skips its own polishing because Medaka polishes next. |
+| Medaka | 56 min | 70 min | 64 min | Polishes a rougher, 3% larger draft. Uses under 3 of 8 cores; the next target. |
+| eggNOG | 40 min | 66 min | **41 min** | `--eggnog_dbmem`: the annotation step took 6.5 min with `eggnog.db` in memory (41 GB peak). The DIAMOND search is now 34 of the 41 minutes. |
+| Kraken2 | 1.5 min | 9.3 min | **2.7 min** | Includes the one-time 64 GB database download into the machine's cache: 7 min 55 s with the default AWS CLI client, 63 s with CRT. |
 
-Reads, filtered reads and host depletion were identical in both runs (469,645 reads after filtering, 301 host reads).
+Reads, filtered reads and host depletion were identical in all runs (469,645 reads after filtering, 301 host reads), and `zymo-fecal2` and `zymo-fecal3` kept the same 316 species. Flye is not fully deterministic with several threads, so bins and annotations vary slightly between runs (8 or 9 high-quality bins; 4,134 or 4,143 KEGG orthologs).
 
 Other changes for speed, cost and fault tolerance:
 
@@ -143,7 +143,7 @@ All thresholds are placeholders: QC limits, mock limits (`mock_max_bray`, `mock_
 | Flye and Medaka | Passed on small data. Same reads and databases, run 3. Flye: 467 contigs, 7928514 bp, N50 20795. Medaka: 467 contigs, 7858240 bp, N50 20573, model file `r1041_e82_400bps_sup_v5.0.0_model_pt.tar.gz`. |
 | SemiBin2, geNomad, AMRFinderPlus | Passed on AWS on 2026-10-31 (`zymo-aws1`, first ~3 Gb of the ZymoBIOMICS mock ERR2906227): 9 SemiBin2 bins, AMRFinderPlus and geNomad completed with the S3 databases. |
 | CheckM2, eggNOG | Passed on AWS in `zymo-fecal1` and `zymo-fecal2` after the fixes for `zymo-aws1` (CheckM2's container timed out while Kraken2 staged its database; eggNOG-mapper rejected a missing output folder). |
-| Whole pipeline on real data | Passed on AWS. `zymo-fecal1` (2026-10-31): 29 of 29 tasks, 172 bins (9 high quality, 43 at least medium), 273 species by both methods at Kraken2 confidence 0.05. `zymo-fecal2` (2026-11-01, faster code, confidence 0.005): 29 of 29 tasks with no retries, 173 bins (8 high quality, 45 at least medium), 316 species by both methods, 50 AMRFinderPlus hits, 4,134 KEGG orthologs. Database cache, ECR images and the S3 task cache worked. `zymo-fecal3` (CRT downloads, eggNOG `--dbmem`) is running. Step times are under "Performance". |
+| Whole pipeline on real data | Passed on AWS. `zymo-fecal1` (2026-10-31): 29 of 29 tasks, 172 bins (9 high quality, 43 at least medium), 273 species by both methods at Kraken2 confidence 0.05. `zymo-fecal2` (2026-11-01, faster code, confidence 0.005): 29 of 29 tasks with no retries, 173 bins (8 high quality, 45 at least medium), 316 species by both methods, 50 AMRFinderPlus hits, 4,134 KEGG orthologs. Database cache, ECR images and the S3 task cache worked. `zymo-fecal3` (2026-11-01, CRT downloads, eggNOG `--dbmem`): 29 of 29 tasks with no retries in 2 h 39 min. Step times are under "Performance". |
 | GTDB-Tk, Emu | Not run on real data. |
 | Container tags | Passed as a resolution check on 2026-10-28. `nextflow inspect -profile standard` mapped each included process to the tag in `nextflow.config`. Core image `ghcr.io/musicofthings/panbiome-gut-ont-core:0.1.0` is on GHCR (private) and mirrored to ECR in `ap-south-1` with the same digest. |
 | AWS Batch | Stub run passed on 2026-10-30: `stub-test4`, 48 of 48 tasks, report written to S3. Database downloads (sylph r226, CheckM2, geNomad, AMRFinderPlus, eggNOG 5.0.2, T2T-CHM13 index) and the 64 GB Kraken2 build finished. Real data from 2026-10-31: see the rows above. Kraken2 with the 64 GB build classified 96% of mock reads at confidence 0 (the eight mock bacteria on top) and 0.14% at 0.05. |

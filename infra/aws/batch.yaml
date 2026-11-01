@@ -23,9 +23,18 @@ Parameters:
     Type: Number
     Default: 1000
     Description: Disk for the one-off Kraken2 build, which writes about 450 GB of GTDB genomes.
+  UploadOrigins:
+    Type: String
+    Default: ''
+    Description: >-
+      Comma-separated web origins allowed to upload parts straight to the bucket from the browser (the run monitor's
+      CloudFront URL, plus http://localhost:5173 and http://127.0.0.1:5173 for local development). Empty adds no CORS rule.
   WorkExpiryDays:
     Type: Number
     Default: 14
+
+Conditions:
+  HasUploadOrigins: !Not [!Equals [!Ref UploadOrigins, '']]
 
 Resources:
   DataBucket:
@@ -47,6 +56,16 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+      # Browsers PUT upload parts to presigned URLs and read each part's ETag to complete the upload.
+      CorsConfiguration: !If
+        - HasUploadOrigins
+        - CorsRules:
+            - AllowedMethods: [PUT]
+              AllowedOrigins: !Split [',', !Ref UploadOrigins]
+              AllowedHeaders: [content-type]
+              ExposedHeaders: [ETag]
+              MaxAge: 3000
+        - !Ref AWS::NoValue
       LifecycleConfiguration:
         Rules:
           - Id: expire-work

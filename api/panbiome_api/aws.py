@@ -22,7 +22,13 @@ class RunStore:
         config = Config(retries={"mode": "standard", "max_attempts": 5})
         self.s = settings
         self.batch = session.client("batch", config=config)
-        self.s3 = session.client("s3", config=config)
+        # Regional, virtual-hosted URLs: browsers upload to presigned URLs, and a global-endpoint URL would
+        # redirect, which fails the CORS preflight.
+        self.s3 = session.client(
+            "s3",
+            endpoint_url=f"https://s3.{settings.region}.amazonaws.com",
+            config=config.merge(Config(signature_version="s3v4", s3={"addressing_style": "virtual"})),
+        )
         self.logs = session.client("logs", config=config)
 
     # ---- S3
@@ -59,6 +65,13 @@ class RunStore:
                 )
                 out.append({"path": obj["Key"][len(prefix) :], "size": obj["Size"], "url": url})
         return sorted(out, key=lambda r: (r["path"].count("/"), r["path"]))
+
+    def result_text(self, run: str, path: str) -> str | None:
+        got = self._get_text(f"results/{run}/{path}")
+        return got[0] if got else None
+
+    def samples(self, run: str) -> list[str]:
+        return self._prefixes(f"results/{run}/samples/")
 
     def task_log(self, run: str, task_hash: str, lines: int) -> dict:
         listing = self.s3.list_objects_v2(Bucket=self.s.bucket, Prefix=f"work/{run}/{task_hash}", MaxKeys=1)

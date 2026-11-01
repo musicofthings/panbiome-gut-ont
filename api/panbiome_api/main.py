@@ -1,4 +1,5 @@
-"""Read-only run monitor API: runs on AWS Batch, their step graph and task status, logs and reports."""
+"""Run monitor API: runs on AWS Batch, their step graph, task status, logs and reports, plus a file explorer
+for the data bucket with direct browser-to-S3 uploads."""
 
 from datetime import datetime
 from typing import Annotated
@@ -7,9 +8,11 @@ from botocore.exceptions import ClientError, NoCredentialsError, TokenRetrievalE
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
-from . import pipeline, settings
+from . import pipeline, report, settings
 from .aws import RunStore
+from .files import ROOTS, FileStore
 from .tasks import rollup, tasks_from_jobs, tasks_from_trace
 
 HEAD_STATUS = {
@@ -29,7 +32,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=config.allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -43,8 +46,22 @@ def store() -> RunStore:
     return _store
 
 
+def files() -> FileStore:
+    s = store()
+    return FileStore(s.s3, s.s.bucket)
+
+
 Store = Annotated[RunStore, Depends(store)]
+Files = Annotated[FileStore, Depends(files)]
 RunName = Annotated[str, Path(pattern=r"^[A-Za-z0-9._-]{1,100}$")]
+SampleName = Annotated[str, Path(pattern=r"^[A-Za-z0-9._-]{1,100}$")]
+
+
+def user_of(request: Request) -> str:
+    """The signed-in user from the API Gateway JWT authorizer; "local" when running with uvicorn."""
+    event = request.scope.get("aws.event") or {}
+    claims = event.get("requestContext", {}).get("authorizer", {}).get("jwt", {}).get("claims", {})
+    return str(claims.get("username") or claims.get("sub") or "local")
 
 
 @app.exception_handler(TokenRetrievalError)
@@ -169,3 +186,104 @@ def task_log(
 @app.get("/api/runs/{run}/reports")
 def reports(run: RunName, s: Store):
     return s.reports(run)
+
+
+@app.get("/api/runs/{run}/samples")
+def run_samples(run: RunName, s: Store):
+    return report.run_summary(lambda path: s.result_text(run, path), s.samples(run))
+
+
+@app.get("/api/runs/{run}/samples/{sample}")
+def sample_report(run: RunName, sample: SampleName, s: Store):
+    if sample not in s.samples(run):
+        raise HTTPException(404, f"No sample {sample} in {run}")
+    return report.sample_report(lambda path: s.result_text(run, path), sample)
+
+
+# ---- file explorer
+
+RootName = Annotated[str, Query(pattern=r"^[a-z_]{1,30}$")]
+
+
+@app.get("/api/files/roots")
+def file_roots():
+    return [{"name": k, "label": r.label, "writable": r.writable} for k, r in ROOTS.items()]
+
+
+@app.get("/api/files")
+def list_files(f: Files, root: RootName, path: str = "", token: str | None = None):
+    return f.listing(root, path, token)
+
+
+@app.get("/api/files/download")
+def download(f: Files, root: RootName, path: str):
+    return f.download_url(root, path)
+
+
+@app.get("/api/files/view")
+def view(f: Files, root: RootName, path: str):
+    return f.view_url(root, path)
+
+
+@app.delete("/api/files")
+def delete_file(f: Files, root: RootName, path: str, folder: bool = False):
+    return f.delete(root, path, folder)
+
+
+class FolderIn(BaseModel):
+    root: str
+    path: str
+
+
+@app.post("/api/files/folders")
+def make_folder(body: FolderIn, f: Files):
+    return f.make_folder(body.root, body.path)
+
+
+class UploadIn(BaseModel):
+    root: str
+    path: str
+    size: int
+    overwrite: bool = False
+
+
+class PartsIn(BaseModel):
+    key: str
+    upload_id: str
+    part_numbers: list[int]
+
+
+class Part(BaseModel):
+    part_number: int
+    etag: str
+
+
+class CompleteIn(BaseModel):
+    key: str
+    upload_id: str
+    parts: list[Part] = Field(max_length=10_000)
+
+
+class AbortIn(BaseModel):
+    key: str
+    upload_id: str
+
+
+@app.post("/api/uploads")
+def start_upload(body: UploadIn, f: Files, request: Request):
+    return f.start_upload(body.root, body.path, body.size, body.overwrite, user_of(request))
+
+
+@app.post("/api/uploads/parts")
+def upload_parts(body: PartsIn, f: Files):
+    return f.part_urls(body.key, body.upload_id, body.part_numbers)
+
+
+@app.post("/api/uploads/complete")
+def complete_upload(body: CompleteIn, f: Files):
+    return f.complete(body.key, body.upload_id, [p.model_dump() for p in body.parts])
+
+
+@app.post("/api/uploads/abort")
+def abort_upload(body: AbortIn, f: Files):
+    return f.abort(body.key, body.upload_id)

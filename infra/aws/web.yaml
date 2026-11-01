@@ -4,7 +4,7 @@ Description: panbiome-gut-ont run monitor - Cognito sign-in for lab staff, the F
 Parameters:
   DataBucket:
     Type: String
-    Description: Bucket output of the panbiome-gut-ont-batch stack. The API reads launch/, results/ and work/.
+    Description: Bucket output of the panbiome-gut-ont-batch stack. The API reads launch/, results/, work/ and test_data/, and manages uploads/.
   CodeKey:
     Type: String
     Description: Key of the API's Lambda zip in DataBucket, uploaded by deploy_web.sh.
@@ -105,13 +105,21 @@ Resources:
                 Resource: !Sub 'arn:${AWS::Partition}:s3:::${DataBucket}'
                 Condition:
                   StringLike:
-                    s3:prefix: [launch/*, results/*, work/*]
+                    s3:prefix: [launch/*, results/*, work/*, test_data/*, uploads/*]
+              # Presigned download links are signed with this role, so they reach only these prefixes.
               - Effect: Allow
                 Action: s3:GetObject
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:s3:::${DataBucket}/launch/*'
                   - !Sub 'arn:${AWS::Partition}:s3:::${DataBucket}/results/*'
                   - !Sub 'arn:${AWS::Partition}:s3:::${DataBucket}/work/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${DataBucket}/test_data/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${DataBucket}/uploads/*'
+              # The file explorer writes only under uploads/: folders, deletes, and multipart uploads whose
+              # parts the browser sends straight to S3 with URLs signed by this role.
+              - Effect: Allow
+                Action: [s3:PutObject, s3:DeleteObject, s3:AbortMultipartUpload]
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${DataBucket}/uploads/*'
               # ListJobs and DescribeJobs do not support resource-level permissions.
               - Effect: Allow
                 Action: [batch:ListJobs, batch:DescribeJobs]
@@ -188,6 +196,24 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: GET /api/{proxy+}
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${ApiIntegration}'
+
+  ApiPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /api/{proxy+}
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${ApiIntegration}'
+
+  ApiDeleteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: DELETE /api/{proxy+}
       AuthorizationType: JWT
       AuthorizerId: !Ref JwtAuthorizer
       Target: !Sub 'integrations/${ApiIntegration}'
@@ -292,7 +318,7 @@ Resources:
         SecurityHeadersConfig:
           ContentSecurityPolicy:
             Override: true
-            ContentSecurityPolicy: !Sub "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://${AuthDomainPrefix}.auth.${AWS::Region}.amazoncognito.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+            ContentSecurityPolicy: !Sub "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://${AuthDomainPrefix}.auth.${AWS::Region}.amazoncognito.com https://${DataBucket}.s3.${AWS::Region}.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
           StrictTransportSecurity:
             Override: true
             AccessControlMaxAgeSec: 63072000
@@ -353,7 +379,8 @@ Resources:
           - PathPattern: /api/*
             TargetOriginId: api
             ViewerProtocolPolicy: https-only
-            AllowedMethods: [GET, HEAD, OPTIONS]
+            # CloudFront accepts only GET/HEAD, GET/HEAD/OPTIONS or all seven; the API has no PUT or PATCH routes.
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
             Compress: true
             CachePolicyId: !Ref ApiCachePolicy
             ResponseHeadersPolicyId: !Ref SecurityHeaders

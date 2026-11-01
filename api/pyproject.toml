@@ -1,7 +1,7 @@
 [project]
 name = "panbiome-api"
 version = "0.1.0"
-description = "Read-only run monitor API for panbiome-gut-ont on AWS Batch"
+description = "Run monitor, report and file API for panbiome-gut-ont on AWS Batch"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
